@@ -36,6 +36,16 @@ BETWEEN_RUNS = {
     "w:commentRangeStart": "the start or end of a comment's range",
     "w:commentRangeEnd": "the start or end of a comment's range",
 }
+# Elements that wrap runs. An edit may sit wholly inside one but not cross its edge.
+WRAPPERS = {
+    "w:hyperlink": "a hyperlink",
+    "w:smartTag": "a smart tag",
+    "w:customXml": "custom XML",
+    "w:sdt": "a content control",
+    "w:fldSimple": "a field",
+    "w:bdo": "a text-direction override",
+    "w:dir": "a text-direction override",
+}
 
 
 class Piece:
@@ -53,6 +63,7 @@ class Paragraph:
         self.xml = xml
         self.pieces = []
         self.barriers = []  # (offset in the text, what stands there)
+        self.spans = []  # (start, end, what wraps the text between them)
         self._length = 0
         self._walk(parse(xml))
         self.text = "".join(html.unescape(u) for p in self.pieces for u in p.units)
@@ -63,6 +74,14 @@ class Paragraph:
                 self._run(child)
             elif child.name in BETWEEN_RUNS:
                 self.barriers.append((self._length, BETWEEN_RUNS[child.name]))
+            elif child.name in WRAPPERS:
+                index = len(self.spans)
+                self.spans.append(None)
+                start = self._length
+                self._walk(child)
+                self.spans[index] = (start, self._length, WRAPPERS[child.name])
+            elif child.name == "w:sdtContent":
+                self._walk(child)
 
     def _run(self, run):
         for child in run.children:

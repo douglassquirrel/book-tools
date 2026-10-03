@@ -69,3 +69,31 @@ def test_names_any_other_run_content_and_range_marks_as_barriers():
         (3, "a field"),
         (3, "a bookmark"),
     ]
+
+
+def test_reads_text_inside_a_hyperlink_and_records_where_the_link_starts_and_ends():
+    xml = (
+        "<w:p><w:r><w:t>see </w:t></w:r>"
+        '<w:hyperlink r:id="rId5"><w:r><w:t>the </w:t></w:r><w:r><w:t>site</w:t></w:r></w:hyperlink>'
+        "<w:r><w:t> now</w:t></w:r></w:p>"
+    )
+    p = Paragraph(xml)
+    assert p.text == "see the site now"
+    assert p.spans == [(4, 12, "a hyperlink")]
+    assert p.barriers == []
+
+
+def test_reads_text_inside_other_wrappers_of_runs():
+    xml = (
+        "<w:p><w:smartTag><w:r><w:t>one </w:t></w:r></w:smartTag>"
+        "<w:sdt><w:sdtPr><w:alias w:val=\"x\"/></w:sdtPr><w:sdtContent>"
+        "<w:r><w:t>two </w:t></w:r></w:sdtContent></w:sdt>"
+        '<w:fldSimple w:instr="PAGE"><w:r><w:t>3</w:t></w:r></w:fldSimple></w:p>'
+    )
+    p = Paragraph(xml)
+    assert p.text == "one two 3"
+    assert p.spans == [
+        (0, 4, "a smart tag"),
+        (4, 8, "a content control"),
+        (8, 9, "a field"),
+    ]
