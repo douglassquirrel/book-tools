@@ -1,0 +1,88 @@
+"""Writes one change into a paragraph's XML as a tracked deletion and insertion."""
+
+import re
+
+WHITESPACE = tuple(" \t\n\r")
+
+
+class Change:
+    """The text from `start` to `end` of a paragraph is to become `new`.
+
+    `start == end` is a pure insertion; it goes after the character before
+    `start` when `after` is true and before the character at `start` otherwise.
+    An empty `new` is a pure deletion. `del_id` and `ins_id` are the revision
+    ids to use.
+    """
+
+    def __init__(self, start, end, new, del_id=None, ins_id=None, after=True):
+        self.start = start
+        self.end = end
+        self.new = new
+        self.del_id = del_id
+        self.ins_id = ins_id
+        self.after = after
+
+
+def revise(paragraph, change, stamp):
+    """Return the paragraph's XML with `change` made as a tracked change.
+
+    `stamp` is the author and date attributes every revision carries.
+    """
+    xml = paragraph.xml
+    first, k1 = _piece_holding(paragraph, change.start)
+    last, k2 = _piece_holding(paragraph, change.end - 1)
+    k2 += 1
+    run = first.run
+    if last.run is not run:
+        raise NotImplementedError
+    before = xml[run.start : first.t.start]
+    left = before + _text(first.units[:k1]) + "</w:r>"
+    deleted = _shell(xml, run) + _text(first.units[k1:k2]) + "</w:r>"
+    right = _shell(xml, run) + _text(last.units[k2:]) + xml[last.t.end : run.end]
+    return (
+        xml[: run.start]
+        + left
+        + f'<w:del w:id="{change.del_id}"{stamp}>{_as_deleted(deleted)}</w:del>'
+        + f'<w:ins w:id="{change.ins_id}"{stamp}><w:r>{_formatting(xml, run)}'
+        + _text([_escape(change.new)])
+        + "</w:r></w:ins>"
+        + right
+        + xml[run.end :]
+    )
+
+
+def _piece_holding(paragraph, offset):
+    """The piece of text holding the character at `offset`, and the offset within it."""
+    for piece in paragraph.pieces:
+        if piece.start <= offset < piece.start + len(piece.units):
+            return piece, offset - piece.start
+    raise IndexError(offset)
+
+
+def _formatting(xml, run):
+    """The run's <w:rPr>, exactly as written, or nothing."""
+    for child in run.children:
+        if child.name == "w:rPr":
+            return xml[child.start : child.end]
+    return ""
+
+
+def _shell(xml, run):
+    """The start of a run that is formatted as `run` is: its start tag and formatting."""
+    return xml[run.start : run.open_end] + _formatting(xml, run)
+
+
+def _text(units):
+    """A <w:t> holding `units`, each a character as XML spells it."""
+    text = "".join(units)
+    keep = ' xml:space="preserve"' if text[:1] in WHITESPACE or text[-1:] in WHITESPACE else ""
+    return f"<w:t{keep}>{text}</w:t>"
+
+
+def _as_deleted(runs):
+    """The same runs with their text marked as deleted text."""
+    return re.sub(r"<(/?)w:t(?=[\s>/])", r"<\1w:delText", runs)
+
+
+def _escape(text):
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
