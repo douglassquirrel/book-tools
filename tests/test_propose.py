@@ -112,3 +112,23 @@ def test_reject_all_fails_when_a_deleted_word_is_not_the_original_word():
     results = checked((BODY, "<w:delText>quick</w:delText>", "<w:delText>quack</w:delText>"))
     assert results[0][:2] == ("reject all", False)
     assert results[1][:2] == ("accept all", True)
+
+
+def test_accept_all_fails_when_an_inserted_word_is_not_the_one_asked_for():
+    results = checked((BODY, "<w:t>slow</w:t>", "<w:t>sluggish</w:t>"))
+    assert results[0][:2] == ("reject all", True)
+    assert results[1] == (
+        "accept all",
+        False,
+        "paragraph 1 of word/document.xml reads 'the sluggish brown dog'"
+        " but the edits ask for 'the slow brown dog'",
+    )
+
+
+def test_accept_all_fails_when_an_edit_was_not_made_at_all():
+    spoil = (ENDNOTES, f'<w:ins w:id="6"{LOCAL}><w:r><w:t>the</w:t></w:r></w:ins>', "")
+    assert checked(spoil)[1] == (
+        "accept all",
+        False,
+        "paragraph 1 of word/endnotes.xml reads ' note' but the edits ask for 'the note'",
+    )

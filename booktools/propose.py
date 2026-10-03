@@ -56,7 +56,7 @@ def verify(parts, out, located, author, dates):
     changed = sorted({found.target.part for found in located})
     return [
         _reject_all(parts, out, ids),
-        ("accept all", True, f"the original with exactly the {_count(len(located), 'edit')} made"),
+        _accept_all(parts, out, located, ids),
         (
             "revisions",
             True,
@@ -82,6 +82,26 @@ def _reject_all(parts, out, ids):
             if fault:
                 return ("reject all", False, fault)
     return ("reject all", True, "every paragraph reads as in the original")
+
+
+def _accept_all(parts, out, located, ids):
+    """With this run's revisions accepted, the text must be the original with each
+    edit made as a plain replacement, and nothing else."""
+    for part in TEXT_PARTS:
+        if part not in parts:
+            continue
+        wanted = []
+        for number, (start, end, _) in enumerate(paragraph_spans(parts[part]), 1):
+            text = Paragraph(parts[part][start:end]).text
+            here = [f for f in located if (f.target.part, f.target.number) == (part, number)]
+            for found in sorted(here, key=lambda f: f.start, reverse=True):
+                text = text[: found.start] + found.edit.replace + text[found.end :]
+            wanted.append(unicodedata.normalize("NFC", text))
+        fault = _difference(part, _texts(accept(out[part], ids)), wanted, "the edits ask for")
+        if fault:
+            return ("accept all", False, fault)
+    made = _count(len(located), "edit")
+    return ("accept all", True, f"the original with exactly the {made} made")
 
 
 def _texts(xml):
