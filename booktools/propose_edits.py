@@ -11,7 +11,7 @@ from booktools.clock import revision_dates
 from booktools.docx import Docx, DocxError
 from booktools.editsfile import EditsFileError, parse_edits
 from booktools.manuscript import Manuscript
-from booktools.plan import plan
+from booktools.plan import PlanError, plan
 from booktools.propose import apply, highest_id, verify
 from booktools.report import edit_line
 
@@ -60,12 +60,24 @@ def _run(args, now):
         raise Refusal(f"{args.out} already exists; give another name or add --force")
     parts = docx.texts()
     manuscript = Manuscript(parts)
-    located = plan(edits, manuscript, highest_id(parts))
+    if not edits:
+        print("no edits, nothing written")
+        return 0
+    try:
+        located = plan(edits, manuscript, highest_id(parts))
+    except PlanError as error:
+        for found in error.located:
+            print(edit_line(found, found.text, _place(manuscript, found), "found"))
+        failed = len(edits) - len(error.located)
+        headline = f"{failed} of {_count(len(edits), 'edit')} cannot be made; nothing written:"
+        print(f"propose-edits: {headline}", file=sys.stderr)
+        for problem in error.problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 1
     if args.dry_run:
         for found in located:
             print(edit_line(found, found.text, _place(manuscript, found), "found"))
-        count = f"{len(located)} edit" + ("" if len(located) == 1 else "s")
-        print(f"dry run: {count} found; {args.out} would be written; nothing written")
+        print(f"dry run: {_count(len(located), 'edit')} found; {args.out} would be written; nothing written")
         return 0
     dates = revision_dates(now())
     out = apply(parts, located, args.author, dates)
@@ -81,6 +93,10 @@ def _run(args, now):
         shutil.move(copy, args.out)
     print(f"wrote {args.out}")
     return 0
+
+
+def _count(number, noun):
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
 
 
 def _place(manuscript, found):

@@ -166,3 +166,32 @@ def test_a_usage_error_exits_2_and_help_exits_0(book, capsys):
     out = capsys.readouterr().out
     for flag in ("--in", "--out", "--author", "--dry-run", "--force", "--tmp"):
         assert flag in out
+
+
+def test_edits_that_cannot_be_placed_exit_1_and_nothing_is_written(tmp_path, capsys):
+    edits = [
+        {"id": "ok", "find": "March", "replace": "April"},
+        {"id": "gone", "find": "no such words", "replace": "x"},
+        {"id": "twice", "find": "the", "replace": "a"},
+    ]
+    book = Book(tmp_path, edits)
+    for flags in ((), ("--dry-run",)):
+        assert book.run(*flags) == 1
+        captured = capsys.readouterr()
+        assert captured.out.splitlines() == [
+            "ok | body, paragraph 9 | The log for [March → April] is missing. | | found"
+        ]
+        assert captured.err.splitlines() == [
+            "propose-edits: 2 of 3 edits cannot be made; nothing written:",
+            '  edit 2 (gone): "find" text not found in the body',
+            '  edit 3 (twice): "find" text occurs 2 times in the body (paragraphs 3 and 6);'
+            ' add "occurrence" to say which',
+        ]
+        assert not book.out.exists()
+
+
+def test_an_empty_edits_file_succeeds_and_writes_no_copy(tmp_path, capsys):
+    book = Book(tmp_path, edits=[])
+    assert book.run() == 0
+    assert capsys.readouterr().out == "no edits, nothing written\n"
+    assert not book.out.exists()

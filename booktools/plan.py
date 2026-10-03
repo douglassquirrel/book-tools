@@ -13,9 +13,10 @@ ORDER = {BODY: 0, ENDNOTES: 1, FOOTNOTES: 2}
 class PlanError(Exception):
     """One or more edits cannot be made. `problems` names each."""
 
-    def __init__(self, problems):
+    def __init__(self, problems, located=()):
         super().__init__("; ".join(problems))
         self.problems = problems
+        self.located = list(located)  # the edits that could be placed, in document order
 
 
 class Located:
@@ -73,9 +74,6 @@ def plan(edits, manuscript, highest_id):
         new = edit.replace[prefix : len(edit.replace) - suffix]
         change = Change(start + prefix, end - suffix, new, after=prefix > 0)
         located.append(Located(edit, target, start, end, change, read(target).text))
-    problems.extend(_overlaps(located))
-    if problems:
-        raise PlanError(problems)
     located.sort(
         key=lambda found: (
             ORDER[found.target.part],
@@ -84,6 +82,12 @@ def plan(edits, manuscript, highest_id):
             found.start,
         )
     )
+    for found, problem in _overlaps(located):
+        problems.append(problem)
+        if found in located:
+            located.remove(found)
+    if problems:
+        raise PlanError(problems, located)
     for found in located:
         change = found.change
         if change.start < change.end:
@@ -96,10 +100,12 @@ def plan(edits, manuscript, highest_id):
 
 
 def _overlaps(located):
-    """A problem for each edit whose "find" text shares characters with an earlier edit's."""
+    """(edit, problem) for each edit whose "find" text shares characters with that of
+    an edit earlier in the edits file."""
     problems = []
-    for index, later in enumerate(located):
-        for earlier in located[:index]:
+    in_file_order = sorted(located, key=lambda found: found.edit.index)
+    for index, later in enumerate(in_file_order):
+        for earlier in in_file_order[:index]:
             same = (earlier.target.part, earlier.target.start) == (
                 later.target.part,
                 later.target.start,
@@ -108,8 +114,11 @@ def _overlaps(located):
                 where = later.target.place
                 where = "the body" if where == "body" else where
                 problems.append(
-                    f"{later.edit.name}: overlaps {earlier.edit.name} in paragraph"
-                    f" {later.target.number} of {where}; combine them into one edit"
+                    (
+                        later,
+                        f"{later.edit.name}: overlaps {earlier.edit.name} in paragraph"
+                        f" {later.target.number} of {where}; combine them into one edit",
+                    )
                 )
     return problems
 
