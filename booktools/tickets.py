@@ -162,7 +162,8 @@ def mismatches(ticket, viewed):
     if ticket.priority and (viewed.get("priority") or "").lower() != ticket.priority:
         found.append(f"the priority came back as {viewed.get('priority') or 'nothing'}")
     if ticket.labels and viewed.get("labels") != ticket.labels:
-        found.append(f"the labels came back as {', '.join(viewed.get('labels') or []) or 'nothing'}")
+        labels = ", ".join(viewed.get("labels") or []) or "nothing"
+        found.append(f"the labels came back as {labels}")
     for name, wanted in (("milestone", ticket.milestone), ("status", ticket.status)):
         got = viewed.get(name)
         if wanted and (got or "").casefold() != wanted.casefold():

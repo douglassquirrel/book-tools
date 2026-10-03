@@ -357,12 +357,12 @@ def test_line_endings_inside_the_xml_are_kept_as_they_were(tmp_path):
 def test_text_stored_decomposed_is_found_by_an_edit_typed_composed(tmp_path, capsys):
     from tests.samples import BODY_PARAGRAPHS, p
 
-    body = list(BODY_PARAGRAPHS) + [p("The café by the pier.")]
-    edits = [{"find": "café by", "replace": "café near"}]
+    body = list(BODY_PARAGRAPHS) + [p("The cafe\u0301 by the pier.")]
+    edits = [{"find": "caf\u00e9 by", "replace": "caf\u00e9 near"}]
     book = Book(tmp_path, edits, sample_parts(body))
     assert book.run() == 0
     assert capsys.readouterr().out.splitlines()[0] == (
-        "edit 1 | body, paragraph 10 | The café [by → near] the pier. | | PASS"
+        "edit 1 | body, paragraph 10 | The cafe\u0301 [by → near] the pier. | | PASS"
     )
 
 

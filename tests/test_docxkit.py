@@ -8,7 +8,7 @@ pytestmark = pytest.mark.tier1
 
 PARTS = {
     "[Content_Types].xml": "<Types/>",
-    "word/document.xml": "<w:document>café — “quoted”</w:document>",
+    "word/document.xml": "<w:document>caf\u00e9 — “quoted”</w:document>",
     "word/media/image1.png": b"\x89PNG\x00\xff",
 }
 

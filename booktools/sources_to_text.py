@@ -127,7 +127,8 @@ def _need_programs(names):
     if "pdftotext" in missing or "pdftoppm" in missing:
         packages.append("poppler")
     packages += [program for program in ("tesseract", "pandoc") if program in missing]
-    advice = f"Install {'it' if len(missing) == 1 else 'them'} with: brew install {' '.join(packages)}"
+    which = "it" if len(missing) == 1 else "them"
+    advice = f"Install {which} with: brew install {' '.join(packages)}"
     if "poppler" in packages:
         advice += " (pdftotext and pdftoppm come with poppler)"
     raise Refusal(f"not found: {', '.join(missing)}. {advice}")

@@ -143,20 +143,20 @@ def test_finds_nothing_when_the_phrase_is_absent_or_empty():
 
 
 def test_matches_composed_and_decomposed_forms_of_the_same_text():
-    nfc, nfd = "café au lait", "café au lait"
+    nfc, nfd = "caf\u00e9 au lait", "cafe\u0301 au lait"
     # Offsets are into the paragraph's own text, whichever form it is stored in.
-    assert find(para("un ", nfd), "café au") == [(3, 11)]
-    assert find(para("un ", nfc), "café au") == [(3, 10)]
-    assert find(para("un ", nfd), "café") == [(3, 8)]
+    assert find(para("un ", nfd), "caf\u00e9 au") == [(3, 11)]
+    assert find(para("un ", nfc), "cafe\u0301 au") == [(3, 10)]
+    assert find(para("un ", nfd), "cafe\u0301") == [(3, 8)]
 
 
 def test_does_not_match_a_letter_apart_from_its_accent():
-    assert find(para("café"), "cafe") == []
-    assert find(para("café"), "cafe") == []
+    assert find(para("cafe\u0301"), "cafe") == []
+    assert find(para("caf\u00e9"), "cafe") == []
 
 
 def test_matches_decomposed_hangul_against_composed():
-    assert find(para("한글"), "한") == [(0, 3)]
+    assert find(para("\u1112\u1161\u11ab\u1100\u1173\u11af"), "\ud55c") == [(0, 3)]
 
 
 TABBED = "<w:p><w:r><w:t>one</w:t><w:tab/><w:t>two</w:t></w:r></w:p>"

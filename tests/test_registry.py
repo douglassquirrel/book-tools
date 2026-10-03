@@ -277,13 +277,13 @@ def test_a_carried_entry_takes_the_note_s_present_text_and_sentence_and_keeps_it
 def test_the_registry_file_round_trips_and_an_unchanged_save_leaves_it_identical():
     from booktools.registry import dump_registry, load_registry
 
-    first, _ = after(TEXTS + [("Twö “quoted”", "S.")])
+    first, _ = after(TEXTS + [("Tw\u00f6 “quoted”", "S.")])
     first.entries[0].label = "Trinity House"
     text = dump_registry(first)
-    assert text.endswith("\n") and "Twö “quoted”" in text  # readable, not escaped
+    assert text.endswith("\n") and "Tw\u00f6 “quoted”" in text  # readable, not escaped
     loaded = load_registry(text)
     assert dump_registry(loaded) == text
-    again, _ = after(TEXTS + [("Twö “quoted”", "S.")], loaded, "save-1")
+    again, _ = after(TEXTS + [("Tw\u00f6 “quoted”", "S.")], loaded, "save-1")
     assert dump_registry(again) == text
 
 

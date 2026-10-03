@@ -208,13 +208,13 @@ def test_each_thing_that_came_back_different_is_named():
 def test_the_results_file_round_trips():
     from booktools.tickets import dump_results, load_results
 
-    tickets = parse_tickets('[{"title": "One"}, {"title": "Twö \\"q\\""}, {"title": "Three"}]')
+    tickets = parse_tickets('[{"title": "One"}, {"title": "Tw\u00f6 \\"q\\""}, {"title": "Three"}]')
     records = [
         {"index": 1, "title": "One", "id": "TASK-1", "outcome": "filed"},
-        {"index": 2, "title": 'Twö "q"', "id": None, "outcome": "failed: create failed"},
+        {"index": 2, "title": 'Tw\u00f6 "q"', "id": None, "outcome": "failed: create failed"},
     ]
     text = dump_results(records)
-    assert text.endswith("\n") and "Twö" in text  # readable, not escaped
+    assert text.endswith("\n") and "Tw\u00f6" in text  # readable, not escaped
     assert load_results(text, tickets) == {1: records[0], 2: records[1]}
     assert load_results("[]", tickets) == {}
 

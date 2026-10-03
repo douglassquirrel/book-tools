@@ -96,7 +96,9 @@ def _run(args):
         )
     filed = failed = skipped = 0
     stalled = None
-    for done, ticket in enumerate(tickets, 1):
+    tried = 0
+    for ticket in tickets:
+        tried += 1
         earlier = records.get(ticket.index)
         if earlier and earlier["id"] and earlier["outcome"] != "skipped":
             # It exists in Backlog already: never create it a second time.
@@ -139,7 +141,7 @@ def _run(args):
             break
     summary = f"{filed} filed, {failed} failed, {skipped} skipped"
     if stalled:
-        left = len(tickets) - done
+        left = len(tickets) - tried
         summary += f"; stopped with {left} ticket{'' if left == 1 else 's'} not tried"
         print(
             "file-tickets: stopped: going on could file tickets twice or out of order."

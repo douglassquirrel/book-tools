@@ -216,7 +216,9 @@ def _around(text, at):
     if len(text) <= 60:
         return f"'{text}'"
     start = max(0, at - 25)
-    return "'" + ("…" if start else "") + text[start : at + 35] + ("…" if at + 35 < len(text) else "") + "'"
+    lead = "…" if start else ""
+    trail = "…" if at + 35 < len(text) else ""
+    return f"'{lead}{text[start : at + 35]}{trail}'"
 
 
 def _ids(located):

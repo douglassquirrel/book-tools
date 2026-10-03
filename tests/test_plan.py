@@ -22,10 +22,10 @@ def edit(index, find, replace, id="", where=("body",), occurrence=None):
 def summary(located):
     return [
         (
-            l.edit.id, l.target.number, l.start, l.end,
-            l.change.start, l.change.end, l.change.new, l.change.del_id, l.change.ins_id,
+            found.edit.id, found.target.number, found.start, found.end,
+            found.change.start, found.change.end, found.change.new, found.change.del_id, found.change.ins_id,
         )
-        for l in located
+        for found in located
     ]
 
 
@@ -67,9 +67,9 @@ def test_text_found_more_than_once_needs_an_occurrence():
 
 def test_occurrence_chooses_among_the_matches_counted_through_the_document():
     located = plan([edit(1, "the", "a", occurrence=3)], Manuscript(TWO), highest_id=0)
-    assert [(l.target.number, l.start, l.end) for l in located] == [(2, 3, 6)]
+    assert [(found.target.number, found.start, found.end) for found in located] == [(2, 3, 6)]
     located = plan([edit(1, "the", "a", occurrence=2)], Manuscript(TWO), highest_id=0)
-    assert [(l.target.number, l.start, l.end) for l in located] == [(1, 12, 15)]
+    assert [(found.target.number, found.start, found.end) for found in located] == [(1, 12, 15)]
 
 
 def test_an_occurrence_beyond_the_last_match_is_an_error():
@@ -108,8 +108,8 @@ NOTED = {
 
 def placed(edits, parts=NOTED):
     return [
-        (l.target.place, l.target.part, l.target.number, l.start)
-        for l in plan(edits, Manuscript(parts), highest_id=0)
+        (found.target.place, found.target.part, found.target.number, found.start)
+        for found in plan(edits, Manuscript(parts), highest_id=0)
     ]
 
 
@@ -188,7 +188,7 @@ def test_two_edits_whose_text_overlaps_are_an_error():
 def test_edits_that_meet_end_to_start_do_not_overlap():
     m = Manuscript(body(p("the quick brown fox")))
     located = plan([edit(1, "quick ", "x "), edit(2, "brown", "y")], m, highest_id=0)
-    assert [(l.start, l.end) for l in located] == [(4, 10), (10, 15)]
+    assert [(found.start, found.end) for found in located] == [(4, 10), (10, 15)]
 
 
 def test_text_that_runs_from_one_paragraph_into_the_next_is_named_as_such():
@@ -208,8 +208,8 @@ LINK = body(
 
 
 def change_of(find, replace, parts=LINK):
-    (l,) = plan([edit(1, find, replace)], Manuscript(parts), highest_id=0)
-    return (l.change.start, l.change.end, l.change.new, l.change.after)
+    (found,) = plan([edit(1, find, replace)], Manuscript(parts), highest_id=0)
+    return (found.change.start, found.change.end, found.change.new, found.change.after)
 
 
 def test_a_pure_insertion_is_attached_to_a_character_of_the_text_the_edit_named():

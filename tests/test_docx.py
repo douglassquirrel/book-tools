@@ -10,7 +10,7 @@ pytestmark = pytest.mark.tier2
 PARTS = {
     "[Content_Types].xml": "<Types/>",
     "_rels/.rels": "<Relationships/>",
-    "word/document.xml": '<?xml version="1.0"?>\r\n<w:document>café</w:document>',
+    "word/document.xml": '<?xml version="1.0"?>\r\n<w:document>caf\u00e9</w:document>',
     "word/styles.xml": "<w:styles/>",
     "word/media/image1.png": b"\x89PNG\x00\xff",
     "word/_rels/document.xml.rels": "<Relationships/>",
@@ -38,7 +38,7 @@ def test_reads_every_entry_in_order_and_the_word_parts_as_text(sample):
 def test_a_copy_differs_only_in_the_parts_replaced(sample, tmp_path):
     before = sample.read_bytes()
     out = tmp_path / "out.docx"
-    Docx(sample).write_copy(out, {"word/document.xml": "<w:document>thé</w:document>"})
+    Docx(sample).write_copy(out, {"word/document.xml": "<w:document>th\u00e9</w:document>"})
     assert sample.read_bytes() == before
     with zipfile.ZipFile(sample) as old, zipfile.ZipFile(out) as new:
         assert new.namelist() == old.namelist()
@@ -48,7 +48,7 @@ def test_a_copy_differs_only_in_the_parts_replaced(sample, tmp_path):
                 b.date_time, b.compress_type, b.external_attr,
             )
             if name == "word/document.xml":
-                assert new.read(name) == "<w:document>thé</w:document>".encode()
+                assert new.read(name) == "<w:document>th\u00e9</w:document>".encode()
             else:
                 assert new.read(name) == old.read(name)
 
@@ -70,7 +70,7 @@ def test_a_file_that_is_missing_or_not_a_docx_is_refused_in_words(tmp_path):
     pack_docx(other, {"mimetype": "application/epub+zip"})
     assert refusal(other) == f"{other}: not a Word document (it has no word/document.xml)"
     odd = tmp_path / "odd.docx"
-    pack_docx(odd, {"word/document.xml": "<w:document>café</w:document>".encode("utf-16")})
+    pack_docx(odd, {"word/document.xml": "<w:document>caf\u00e9</w:document>".encode("utf-16")})
     assert refusal(odd) == f"{odd}: word/document.xml is not UTF-8 text"
 
 

@@ -389,7 +389,7 @@ def test_bytes_that_are_not_text_are_kept_as_replacement_characters_not_a_failur
     sources.add("odd.pdf", pdf([LONG]))
     sources.tools.control(garbage_on=["pdftotext"])
     assert sources.run() == 0
-    assert sources.text("odd.pdf.txt").startswith("\n=== PDF page 1 of 1 ===\n�� not text")
+    assert sources.text("odd.pdf.txt").startswith("\n=== PDF page 1 of 1 ===\n\ufffd\ufffd not text")
 
 
 def test_an_epub_pandoc_cannot_read_fails_without_leaving_anything(sources, capsys):

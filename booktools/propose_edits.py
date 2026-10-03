@@ -75,7 +75,8 @@ def _run(args, now):
     if args.dry_run:
         for found in located:
             print(edit_line(found, found.text, _place(manuscript, found), "found"))
-        print(f"dry run: {_count(len(located), 'edit')} found; {args.out} would be written; nothing written")
+        found = _count(len(located), "edit")
+        print(f"dry run: {found} found; {args.out} would be written; nothing written")
         return 0
     dates = revision_dates(when, utc=args.utc)
     out = apply(parts, located, args.author, dates)

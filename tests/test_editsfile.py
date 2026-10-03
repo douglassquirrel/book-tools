@@ -76,7 +76,7 @@ def test_a_replace_equal_to_its_find_is_an_error():
         'edit 1 (A1): "replace" is the same as "find", so the edit would change nothing'
     ]
     # The same text spelt with composed and decomposed accents is still the same.
-    assert problems(one(find="café", replace="café")) == [
+    assert problems(one(find="caf\u00e9", replace="cafe\u0301")) == [
         'edit 1: "replace" is the same as "find", so the edit would change nothing'
     ]
 

@@ -37,10 +37,10 @@ def test_nothing_in_common_marks_everything():
 
 
 def test_never_parts_a_letter_from_its_accent():
-    assert changed("cafés here", "cafes here") == ("cafés", "cafes")
+    assert changed("cafe\u0301s here", "cafes here") == ("cafe\u0301s", "cafes")
 
 
 def test_composed_and_decomposed_spellings_of_a_word_count_as_unchanged():
     # The document stores the accent separately; the edit was typed with it composed.
-    assert difference("The café by the pier", "The café near the pier") == (10, 12, "near")
-    assert difference("café one", "café two") == (5, 8, "two")
+    assert difference("The cafe\u0301 by the pier", "The caf\u00e9 near the pier") == (10, 12, "near")
+    assert difference("caf\u00e9 one", "cafe\u0301 two") == (5, 8, "two")
