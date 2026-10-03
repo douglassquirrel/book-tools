@@ -341,3 +341,43 @@ def test_a_lock_left_behind_during_the_batch_is_reported_and_never_removed(tmp_p
     assert sorted(p.name for p in (batch.project / "backlog" / ".locks").iterdir()) == [
         "task-1", "task-2",
     ]
+
+
+def test_a_backlog_that_does_not_answer_in_time_stops_the_whole_batch(tmp_path, monkeypatch, capsys):
+    three = TICKETS + [{"title": "A third"}]
+    batch = Batch(tmp_path, monkeypatch, tickets=three, hang_on_create=2)
+    assert batch.run("--timeout", "0.5", "--results", str(batch.results)) == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "TASK-1  filed  Ch. 3: the 2019 figure",
+        "-  FAILED  Only a title (backlog did not answer within 0.5 seconds)",
+        "1 filed, 1 failed, 0 skipped; stopped with 1 ticket not tried",
+    ]
+    assert captured.err.splitlines() == [
+        "file-tickets: stopped: going on could file tickets twice or out of order."
+        " Check the project for 'Only a title', then run again with the same --results file"
+    ]
+    assert [r["outcome"] for r in records(batch)] == [
+        "filed", "failed: backlog did not answer within 0.5 seconds",
+    ]
+    creates = [call for call in batch.backlog.calls() if call[:2] == ["task", "create"]]
+    assert len(creates) == 2  # the third ticket was never tried
+
+
+def test_an_interrupted_batch_keeps_its_results_and_exits_130(batch, capsys, monkeypatch):
+    import booktools.file_tickets as command
+
+    real = command._file
+
+    def interrupted_on_the_second(ticket, project, timeout):
+        if ticket.index == 2:
+            raise KeyboardInterrupt
+        return real(ticket, project, timeout)
+
+    monkeypatch.setattr(command, "_file", interrupted_on_the_second)
+    assert batch.run("--results", str(batch.results)) == 130
+    assert capsys.readouterr().err.splitlines() == [
+        "file-tickets: interrupted; run again with the same --results file to finish the batch"
+    ]
+    assert [(r["index"], r["outcome"]) for r in records(batch)] == [(1, "filed")]
+    assert sorted(p.name for p in batch.results.parent.iterdir() if "partial" in p.name) == []

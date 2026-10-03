@@ -25,11 +25,18 @@ from booktools.tickets import (
 
 TESTED_WITH = "1.53.0"
 LIST = ["backlog", "task", "list", "--json"]
+STALLED = "backlog did not answer"
 
 
 def main(argv=None):
     """Run the command; return its exit code."""
-    return cli.run("file-tickets", _parser(), _run, argv)
+    return cli.run(
+        "file-tickets",
+        _parser(),
+        _run,
+        argv,
+        interrupted="interrupted; run again with the same --results file to finish the batch",
+    )
 
 
 def _run(args):
@@ -77,14 +84,19 @@ def _run(args):
             "the backlog command was not found. Backlog is yours to install:"
             " brew install backlog-md (or: npm i -g backlog.md)"
         )
-    if "--json" not in _backlog(["backlog", "task", "view", "--help"], args.project).stdout:
+    try:
+        can_view = _backlog(["backlog", "task", "view", "--help"], args.project, args.timeout)
+        existing = _titles(args.project, args.timeout) if args.skip_existing else {}
+    except subprocess.TimeoutExpired:
+        raise Refusal(f"backlog did not answer within {args.timeout:g} seconds") from None
+    if "--json" not in can_view.stdout:
         raise Refusal(
             "this backlog has no `task view --json`, which is needed to check each"
             f" ticket; the kit was tested with Backlog {TESTED_WITH}"
         )
-    existing = _titles(args.project) if args.skip_existing else {}
     filed = failed = skipped = 0
-    for ticket in tickets:
+    stalled = None
+    for done, ticket in enumerate(tickets, 1):
         earlier = records.get(ticket.index)
         if earlier and earlier["id"] and earlier["outcome"] != "skipped":
             # It exists in Backlog already: never create it a second time.
@@ -104,8 +116,10 @@ def _run(args):
             skipped += 1
             print(f"{id}  skipped  {ticket.title} (a ticket with this title exists)")
         else:
-            id, fault = _file(ticket, args.project)
+            id, fault = _file(ticket, args.project, args.timeout)
             outcome = f"failed: {fault}" if fault else "filed"
+            if fault and fault.startswith(STALLED):
+                stalled = ticket
             if fault:
                 failed += 1
                 print(f"{id or '-'}  FAILED  {ticket.title} ({fault})")
@@ -121,7 +135,19 @@ def _run(args):
             "outcome": outcome,
         }
         _save(args.results, records)
-    print(f"{filed} filed, {failed} failed, {skipped} skipped")
+        if stalled:
+            break
+    summary = f"{filed} filed, {failed} failed, {skipped} skipped"
+    if stalled:
+        left = len(tickets) - done
+        summary += f"; stopped with {left} ticket{'' if left == 1 else 's'} not tried"
+        print(
+            "file-tickets: stopped: going on could file tickets twice or out of order."
+            f" Check the project for '{stalled.title}', then run again with the same"
+            " --results file",
+            file=sys.stderr,
+        )
+    print(summary)
     locks = _locks(args.project)
     if locks:
         count = "a lock is" if len(locks) == 1 else f"{len(locks)} locks are"
@@ -138,10 +164,10 @@ def _locks(project):
     return [f"backlog/.locks/{name}" for name in sorted(os.listdir(folder))]
 
 
-def _titles(project):
+def _titles(project, timeout):
     """The id of each ticket in the project, open or done, by its exact title."""
     try:
-        tasks = json.loads(_backlog(LIST, project).stdout)["tasks"]
+        tasks = json.loads(_backlog(LIST, project, timeout).stdout)["tasks"]
         return {task["title"]: task["id"] for task in tasks}
     except (ValueError, KeyError, TypeError):
         raise Refusal(
@@ -164,25 +190,29 @@ def _save(path, records):
             os.remove(partial)
 
 
-def _file(ticket, project):
+def _file(ticket, project, timeout):
     """File one ticket and check it. Returns (its id or None, what went wrong or None)."""
-    done = _backlog(create_command(ticket), project)
-    if done.returncode != 0:
-        return None, f"backlog said: {_said(done)}"
-    id = created_id(done.stdout)
-    if id is None:
-        return None, (
-            "backlog did not say which ticket it created;"
-            " look for it in the project before filing again"
-        )
-    for number, (author, text) in enumerate(ticket.comments, 1):
-        done = _backlog(comment_command(id, author, text), project)
-        if done.returncode != 0:
-            return id, f"comment {number} was not added: backlog said: {_said(done)}"
+    id = None
     try:
-        viewed = json.loads(_backlog(view_command(id), project).stdout)["task"]
-    except (ValueError, KeyError, TypeError):
-        return id, "it could not be read back to check it"
+        done = _backlog(create_command(ticket), project, timeout)
+        if done.returncode != 0:
+            return None, f"backlog said: {_said(done)}"
+        id = created_id(done.stdout)
+        if id is None:
+            return None, (
+                "backlog did not say which ticket it created;"
+                " look for it in the project before filing again"
+            )
+        for number, (author, text) in enumerate(ticket.comments, 1):
+            done = _backlog(comment_command(id, author, text), project, timeout)
+            if done.returncode != 0:
+                return id, f"comment {number} was not added: backlog said: {_said(done)}"
+        try:
+            viewed = json.loads(_backlog(view_command(id), project, timeout).stdout)["task"]
+        except (ValueError, KeyError, TypeError):
+            return id, "it could not be read back to check it"
+    except subprocess.TimeoutExpired:
+        return id, f"{STALLED} within {timeout:g} seconds"
     wrong = mismatches(ticket, viewed)
     return id, "; ".join(wrong) if wrong else None
 
@@ -193,11 +223,13 @@ def _said(done):
     return lines[0].strip() if lines else f"nothing, and exited {done.returncode}"
 
 
-def _backlog(command, project):
-    """Run one `backlog` command in the project folder. Never through a shell."""
+def _backlog(command, project, timeout):
+    """Run one `backlog` command in the project folder. Never through a shell.
+    Raises subprocess.TimeoutExpired, having killed it, if it runs over `timeout`."""
     return subprocess.run(
         command,
         cwd=project,
+        timeout=timeout,
         stdin=subprocess.DEVNULL,
         capture_output=True,
         encoding="utf-8",
