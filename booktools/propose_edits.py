@@ -32,6 +32,9 @@ def main(argv=None, now=None):
         return stop.code
     try:
         return _run(args, now or (lambda: datetime.now(timezone.utc)))
+    except KeyboardInterrupt:
+        print("propose-edits: interrupted; nothing written", file=sys.stderr)
+        return 130
     except Refusal as refusal:
         print(f"propose-edits: {refusal.lines[0]}", file=sys.stderr)
         for line in refusal.lines[1:]:
@@ -92,8 +95,12 @@ def _run(args, now):
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         copy = os.path.join(scratch, "copy.docx")
         docx.write_copy(copy, changed)
-        written = Docx(copy).texts()
+        made = Docx(copy)
+        written = made.texts()
         results = verify(parts, written, located, args.author, dates)
+        stray = docx.strayed(made, changed)
+        if stray and results[3][1]:
+            results[3] = ("package", False, f"{stray} is not byte-identical in the copy")
         sound = all(passed for _, passed, _ in results)
         for found, passed in zip(located, edit_results(parts, written, located)):
             status = "PASS" if passed else "FAIL"

@@ -44,3 +44,14 @@ class Docx:
                 if info.filename in replaced:
                     data = replaced[info.filename].encode("utf-8")
                 archive.writestr(info, data)
+
+    def strayed(self, copy, changed):
+        """The name of the first entry of `copy`, another Docx, that is not the same
+        bytes as here, leaving aside the parts named in `changed`; None if all are."""
+        theirs = {info.filename: data for info, data in copy.entries}
+        if [info.filename for info, _ in copy.entries] != [info.filename for info, _ in self.entries]:
+            return "the list of entries"
+        for info, data in self.entries:
+            if info.filename not in changed and theirs[info.filename] != data:
+                return info.filename
+        return None

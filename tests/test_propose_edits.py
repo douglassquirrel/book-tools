@@ -278,3 +278,38 @@ def test_keep_on_failure_keeps_the_failed_copy_for_inspection(book, capsys, monk
         f"propose-edits: verification failed; the failed copy was kept at {book.out}"
     ]
     assert zipfile.is_zipfile(book.out)
+
+
+def test_a_copy_whose_picture_or_other_entry_changed_fails_the_package_check(book, capsys, monkeypatch):
+    from booktools.docx import Docx
+
+    real = Docx.write_copy
+
+    def careless(self, path, replaced):
+        real(self, path, replaced)
+        with zipfile.ZipFile(path) as written:
+            entries = [(info, written.read(info)) for info in written.infolist()]
+        with zipfile.ZipFile(path, "w") as spoilt:
+            for info, data in entries:
+                spoilt.writestr(info, data + b"!" if info.filename.endswith(".png") else data)
+
+    monkeypatch.setattr(Docx, "write_copy", careless)
+    assert book.run() == 1
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        "package: FAIL: word/media/image1.png is not byte-identical in the copy"
+    )
+    assert not book.out.exists()
+
+
+def test_an_interrupted_run_leaves_nothing_behind_and_exits_130(book, capsys, monkeypatch):
+    import booktools.propose_edits as command
+
+    def interrupt(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(command, "verify", interrupt)
+    assert book.run() == 130
+    assert capsys.readouterr().err.splitlines() == ["propose-edits: interrupted; nothing written"]
+    assert not book.out.exists()
+    assert list(book.scratch.iterdir()) == []
+    assert [path.name for path in book.out.parent.iterdir()] == []
