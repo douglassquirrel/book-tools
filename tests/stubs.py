@@ -116,6 +116,103 @@ else:
 '''
 
 
+PANDOC = r'''
+import html, json, os, re, sys, time, zipfile
+
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "control.json")) as file:
+    control = json.load(file)
+args = sys.argv[1:]
+with open(os.path.join(here, "calls.jsonl"), "a") as file:
+    file.write(json.dumps({"args": args, "cwd": os.getcwd()}) + "\n")
+
+if control.get("hang"):
+    time.sleep(60)
+if control.get("fail"):
+    print("pandoc: could not read the file", file=sys.stderr)
+    sys.exit(1)
+if control.get("silent"):
+    sys.exit(0)
+if control.get("garbage"):
+    sys.stdout.buffer.write(b"\xff\xfe not text")
+    sys.exit(0)
+
+# A very small imitation of pandoc reading a .docx as markdown: one line per
+# paragraph, a blank line after each, note references numbered in order, then
+# the notes.
+source = next(arg for arg in args if arg.endswith(".docx") or arg.endswith(".epub"))
+if source.endswith(".epub"):
+    text = "plain text of " + os.path.basename(source) + "\n"
+else:
+    archive = zipfile.ZipFile(source)
+    notes = {}
+    for kind in ("endnote", "footnote"):
+        name = f"word/{kind}s.xml"
+        if name in archive.namelist():
+            xml = archive.read(name).decode("utf-8")
+            for id, inside in re.findall(rf'<w:{kind} w:id="(\d+)">(.*?)</w:{kind}>', xml, re.S):
+                words = re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", inside)
+                notes[kind, id] = html.unescape("".join(words)).strip()
+    order = []
+    lines = []
+    document = archive.read("word/document.xml").decode("utf-8")
+    for paragraph in re.findall(r"<w:p\b[^>]*>(?:(?!<w:p\b).)*?</w:p>", document, re.S):
+        line = ""
+        pieces = r'<w:t(?: [^>]*)?>([^<]*)</w:t>|<w:(endnote|footnote)Reference\b[^>]*w:id="(\d+)"'
+        for piece in re.finditer(pieces, paragraph):
+            if piece.group(1) is not None:
+                line += html.unescape(piece.group(1))
+            else:
+                order.append((piece.group(2), piece.group(3)))
+                line += f"[^{len(order)}]"
+        lines += [line, ""]
+    for number, key in enumerate(order, 1):
+        lines += [f"[^{number}]: {notes.get(key, '')}", ""]
+    text = "\n".join(lines)
+if "-o" in args:
+    with open(args[args.index("-o") + 1], "w", encoding="utf-8") as file:
+        file.write(text)
+else:
+    sys.stdout.buffer.write(text.encode("utf-8"))
+'''
+
+GIT = r'''
+import json, os, sys, time
+
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "control.json")) as file:
+    control = json.load(file)
+args = sys.argv[1:]
+with open(os.path.join(here, "calls.jsonl"), "a") as file:
+    file.write(json.dumps({"args": args, "cwd": os.getcwd()}) + "\n")
+
+if control.get("hang"):
+    time.sleep(60)
+if control.get("not_a_repository"):
+    print("fatal: not a git repository (or any of the parent directories): .git", file=sys.stderr)
+    sys.exit(128)
+folder, command = args[1], args[2]
+if command == "show":
+    revision, _, path = args[3].partition(":")
+    served = control.get("files", {}).get(revision)
+    if served is None:
+        print(f"fatal: invalid object name '{revision}'.", file=sys.stderr)
+        sys.exit(128)
+    with open(served, "rb") as file:
+        sys.stdout.buffer.write(file.read())
+elif command == "log":
+    revision = args[-1]
+    line = control.get("log", {}).get(revision)
+    if line is None:
+        print(f"fatal: bad revision '{revision}'", file=sys.stderr)
+        sys.exit(128)
+    print(line)
+else:
+    print("stub git: unexpected arguments", args, file=sys.stderr)
+    sys.exit(64)
+'''
+
+
 class Stub:
     """A stand-in program in a folder of its own, to be put on PATH."""
 
@@ -146,6 +243,14 @@ class Stub:
 
 def backlog_stub(folder, **control):
     return Stub(folder, "backlog", BACKLOG, **control)
+
+
+def pandoc_stub(folder, **control):
+    return Stub(folder, "pandoc", PANDOC, **control)
+
+
+def git_stub(folder, **control):
+    return Stub(folder, "git", GIT, **control)
 
 
 def backlog_project(folder):
