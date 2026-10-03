@@ -119,3 +119,24 @@ def test_reads_the_text_as_it_stands_with_existing_tracked_changes_accepted():
         (10, "an existing tracked deletion"),
         (13, "an existing tracked deletion"),
     ]
+
+
+def find(xml, needle):
+    return Paragraph(xml).find(needle)
+
+
+def para(*texts):
+    return "<w:p>" + "".join(f"<w:r><w:t>{t}</w:t></w:r>" for t in texts) + "</w:p>"
+
+
+def test_finds_a_phrase_that_word_has_split_across_runs():
+    assert find(para("The chat win", "dow is", "n’t where"), "window isn’t") == [(9, 21)]
+
+
+def test_finds_every_occurrence_including_at_the_very_start_and_end():
+    assert find(para("ab ", "cab", " ab"), "ab") == [(0, 2), (4, 6), (7, 9)]
+
+
+def test_finds_nothing_when_the_phrase_is_absent_or_empty():
+    assert find(para("abc"), "abd") == []
+    assert find(para("abc"), "") == []

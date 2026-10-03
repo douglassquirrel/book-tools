@@ -99,3 +99,12 @@ class Paragraph:
                 self.barriers.append((self._length, IN_RUN[child.name]))
             elif child.name not in TRANSPARENT:
                 self.barriers.append((self._length, f"a special character ({child.name})"))
+
+    def find(self, needle):
+        """Return (start, end) in the paragraph's text for every place `needle` occurs."""
+        found = []
+        at = self.text.find(needle) if needle else -1
+        while at != -1:
+            found.append((at, at + len(needle)))
+            at = self.text.find(needle, at + 1)
+        return found
