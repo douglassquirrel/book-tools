@@ -17,6 +17,7 @@ from booktools.sources import (
     assemble,
     best_turn,
     needs_ocr,
+    pages_that_differ,
     score,
     split_pages,
 )
@@ -43,6 +44,9 @@ def _run(args, clock, image, given):
     if not os.path.isdir(folder):
         raise Refusal(f"{folder} is not a folder")
     out = args.out or os.path.join(folder, "text")
+    for name in args.redo:
+        if not os.path.isfile(os.path.join(folder, name)):
+            raise Refusal(f"--redo {name}: there is no such file in {folder}")
     os.makedirs(out, exist_ok=True)
     worker = args.worker_report is not None  # one of several processes of a larger run
     if args.clear_locks and not worker:
@@ -61,6 +65,9 @@ def _run(args, clock, image, given):
                 " (to install it: python3 -m pip install --user Pillow)",
                 file=sys.stderr,
             )
+    if args.redo:
+        with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
+            return _redo(Job(folder, out, scratch, args, image, clock, None, redo=True))
     deadline = clock() + args.seconds if args.seconds is not None else None
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         job = Job(folder, out, scratch, args, image, clock, deadline)
@@ -95,6 +102,35 @@ def _run(args, clock, image, given):
             file=sys.stderr,
         )
     return 1 if tally["failed"] or locked else 0
+
+
+def _redo(job):
+    """Convert the named files again, each beside its old text, and say what differs.
+    The old text is never replaced: that is for the user to decide."""
+    names = [name for name in _sources(job.folder) if name in job.args.redo]
+    for name in names:
+        outcome = job.convert(name)
+        old = os.path.join(job.out, name + ".txt")
+        new = job.target(name)
+        said = f"redone as {os.path.basename(new)}: "
+        if name.lower().endswith(".pdf"):
+            said += outcome + "; "
+        if not os.path.exists(old):
+            said += f"there was no {name}.txt to compare it with"
+        else:
+            with open(old, encoding="utf-8") as was, open(new, encoding="utf-8") as now:
+                before, after = was.read(), now.read()
+            differ = pages_that_differ(before, after) if name.lower().endswith(".pdf") else None
+            if before == after:
+                said += f"identical to {name}.txt"
+            elif differ:
+                pages = ", ".join(str(number) for number in differ)
+                said += f"pages that differ from {name}.txt: {pages}"
+            else:
+                said += f"differs from {name}.txt"
+        print(f"{name}: {said}", flush=True)
+    print(f"{len(names)} redone, 0 failed")
+    return 0
 
 
 def _work(job, waiting):
@@ -187,10 +223,11 @@ def _sources(folder):
 class Job:
     """One run's folders and settings, and the conversion of one file at a time."""
 
-    def __init__(self, folder, out, scratch, args, image, clock, deadline):
+    def __init__(self, folder, out, scratch, args, image, clock, deadline, redo=False):
         self.folder, self.out, self.scratch, self.args = folder, out, scratch, args
         self.image = image  # Pillow's Image module, or None to read pages as they are
         self.clock, self.deadline = clock, deadline
+        self.redo = redo  # write NAME.txt.new and start afresh, leaving NAME.txt alone
 
     def out_of_time(self):
         return self.deadline is not None and self.clock() > self.deadline
@@ -200,7 +237,7 @@ class Job:
         return os.path.join(self.out, f".{name}.pages.json")
 
     def target(self, name):
-        return os.path.join(self.out, name + ".txt")
+        return os.path.join(self.out, name + (".txt.new" if self.redo else ".txt"))
 
     def log(self, line):
         with open(os.path.join(self.out, LOG), "a", encoding="utf-8") as file:
@@ -232,7 +269,7 @@ class Job:
 
     def pdf(self, name, source):
         cache = self.cache(name)
-        if os.path.exists(cache):
+        if os.path.exists(cache) and not self.redo:
             with open(cache, encoding="utf-8") as file:
                 state = json.load(file)
         else:
@@ -268,7 +305,7 @@ class Job:
                     ocr[index] = True
             done[index] = page
         self.write(name, assemble(done, ocr, turned).encode("utf-8"))
-        if os.path.exists(cache):
+        if os.path.exists(cache) and not self.redo:
             os.remove(cache)
         self.log(f"{name} pages={total} ocr={sum(ocr)} turned={sum(1 for t in turned if t)}")
         return f"{total} pages, {sum(ocr)} read by OCR, {sum(1 for t in turned if t)} turned"
@@ -358,6 +395,14 @@ def _parser():
         type=float,
         metavar="S",
         help="stop after about this long; the next run goes on where this one stopped",
+    )
+    parser.add_argument(
+        "--redo",
+        nargs="+",
+        default=[],
+        metavar="FILE",
+        help="convert these files again, writing NAME.txt.new beside the old text and"
+        " saying which pages differ; the old text is never replaced",
     )
     parser.add_argument(
         "--skip", nargs="+", default=[], metavar="NAME", help="file names to leave alone"

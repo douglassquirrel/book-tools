@@ -288,3 +288,55 @@ def test_several_workers_convert_every_file_once_between_them(sources, capfd):
         f"s{n}.pdf pages=1 ocr=0 turned=0" for n in range(1, 7)
     ]
     assert list(sources.scratch.iterdir()) == []
+
+
+def test_redo_writes_the_new_text_beside_the_old_and_says_which_pages_differ(sources, capsys):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    sources.add("notes.md", "As it was.\n")
+    sources.add("other.pdf", pdf([LONG]))
+    assert sources.run("--no-rotate") == 0
+    old = sources.text("scan.pdf.txt")
+    capsys.readouterr()
+
+    sources.add("notes.md", "As it is now.\n")
+    assert sources.run("--redo", "scan.pdf", "notes.md", image=FakeImage) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "notes.md: redone as notes.md.txt.new: differs from notes.md.txt",
+        "scan.pdf: redone as scan.pdf.txt.new: 4 pages, 2 read by OCR, 1 turned;"
+        " pages that differ from scan.pdf.txt: 3",
+        "2 redone, 0 failed",
+    ]
+    assert sources.text("scan.pdf.txt") == old  # the old text is never replaced
+    assert sources.text("notes.md.txt") == "As it was.\n"
+    assert sources.text("notes.md.txt.new") == "As it is now.\n"
+    assert "(OCR, page turned 90° clockwise)" in sources.text("scan.pdf.txt.new")
+    assert sources.made() == [
+        ".convert-log.txt", "notes.md.txt", "notes.md.txt.new", "other.pdf.txt",
+        "scan.pdf.txt", "scan.pdf.txt.new",
+    ]
+
+
+def test_redo_of_an_unchanged_file_says_it_is_identical_and_of_a_new_one_that_there_is_nothing_to_compare(
+    sources, capsys
+):
+    sources.add("same.pdf", pdf([LONG, LONG]))
+    assert sources.run() == 0
+    sources.add("fresh.txt", "Never converted before.")
+    capsys.readouterr()
+    assert sources.run("--redo", "same.pdf", "fresh.txt") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "fresh.txt: redone as fresh.txt.txt.new: there was no fresh.txt.txt to compare it with",
+        "same.pdf: redone as same.pdf.txt.new: 2 pages, 0 read by OCR, 0 turned;"
+        " identical to same.pdf.txt",
+        "2 redone, 0 failed",
+    ]
+    assert not (sources.out / "fresh.txt.txt").exists()
+
+
+def test_redo_of_a_name_that_is_not_a_source_is_refused(sources, capsys):
+    sources.add("one.pdf", pdf([LONG]))
+    assert sources.run("--redo", "one.pdf", "nine.pdf") == 2
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        f"sources-to-text: --redo nine.pdf: there is no such file in {sources.folder}"
+    )
+    assert not sources.out.exists() or sources.made() == []

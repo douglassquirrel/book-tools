@@ -1,5 +1,8 @@
 """The pieces of turning a source PDF into searchable text, page by page."""
 
+import re
+
+HEADER = re.compile(r"\n=== PDF page \d+ of \d+[^\n]* ===\n")
 READS_WELL = 150  # a page scoring this or more as it stands is not tried turned
 TURNS = (90, 180, 270)
 
@@ -59,3 +62,18 @@ def best_turn(scores):
             if found > best * 1.5 and found >= best + 3:
                 best, turn = found, candidate
     return turn
+
+
+def pages_that_differ(old, new):
+    """The numbers of the pages whose block (header and text) is not the same in two
+    converted texts of a PDF; None if they do not have the same number of pages."""
+    was, now = _blocks(old), _blocks(new)
+    if len(was) != len(now):
+        return None
+    return [number for number, (a, b) in enumerate(zip(was, now), 1) if a != b]
+
+
+def _blocks(text):
+    """A converted PDF's text cut into its pages, each with its header."""
+    starts = [found.start() for found in HEADER.finditer(text)]
+    return [text[start:end] for start, end in zip(starts, starts[1:] + [len(text)])]
