@@ -13,7 +13,7 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "file-tickets")
+LAUNCHERS = ("propose-edits", "file-tickets", "note-map")
 
 
 @pytest.fixture
@@ -78,3 +78,14 @@ def test_help_names_every_flag_in_the_synopsis(kit, tmp_path):
         "--keep-on-failure", "--utc", "--tmp", "--timeout",
     ):
         assert flag in done.stdout
+
+
+def test_note_map_runs_from_another_folder(kit, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    pack_docx(book / "in.docx", sample_parts())
+    done = run(kit, "note-map", "in.docx", "--registry", "../notes.json", "--dry-run", cwd=book)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.splitlines()[0] == "dry run: 3 notes: 0 carried, 3 new, 0 retired; nothing written"
+    assert [path.name for path in book.iterdir()] == ["in.docx"]
+    assert list(kit.rglob("__pycache__")) == []
