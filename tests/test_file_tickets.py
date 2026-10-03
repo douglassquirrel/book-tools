@@ -62,3 +62,55 @@ def test_files_each_ticket_then_its_comments_then_reads_it_back(batch, capsys):
     ]
     # Backlog has a --project flag of its own: the folder is given as the working directory.
     assert set(batch.backlog.folders()) == {os.path.realpath(batch.project)}
+
+
+def test_a_ticket_that_comes_back_different_is_reported_and_filing_goes_on(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, mangle_create=1)
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "TASK-1  FAILED  Ch. 3: the 2019 figure (the description came back different)",
+        "TASK-2  filed  Only a title",
+        "1 filed, 1 failed, 0 skipped",
+    ]
+
+
+def test_a_ticket_backlog_refuses_is_reported_and_filing_goes_on(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, fail_create=[1])
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "-  FAILED  Ch. 3: the 2019 figure (backlog said: Invalid status: Nonsense."
+        " Valid statuses are: To Do, In Progress, Done)",
+        "TASK-1  filed  Only a title",
+        "1 filed, 1 failed, 0 skipped",
+    ]
+    # Nothing more was tried for the ticket that was not created.
+    assert [call[:2] for call in batch.backlog.calls()] == [
+        ["task", "view"], ["task", "create"], ["task", "create"], ["task", "view"],
+    ]
+
+
+@pytest.mark.parametrize("fault", ["silent_create", "garbage_create"])
+def test_a_create_that_does_not_say_what_it_made_is_a_failure(tmp_path, monkeypatch, capsys, fault):
+    batch = Batch(tmp_path, monkeypatch, **{fault: 1})
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "-  FAILED  Ch. 3: the 2019 figure (backlog did not say which ticket it created;"
+        " look for it in the project before filing again)"
+    )
+
+
+def test_a_comment_that_cannot_be_added_or_a_view_that_is_not_json_is_a_failure(
+    tmp_path, monkeypatch, capsys
+):
+    batch = Batch(tmp_path, monkeypatch, fail_comment=True)
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines()[:2] == [
+        "TASK-1  FAILED  Ch. 3: the 2019 figure (comment 1 was not added:"
+        " backlog said: Could not update task)",
+        "TASK-2  filed  Only a title",
+    ]
+    batch.backlog.control(garbage_view=True)
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines()[1] == (
+        "TASK-4  FAILED  Only a title (it could not be read back to check it)"
+    )
