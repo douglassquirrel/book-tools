@@ -308,3 +308,36 @@ def test_skip_existing_refuses_to_go_on_if_the_project_cannot_be_listed(tmp_path
         "file-tickets: the project's tickets could not be listed (backlog task list --json"
         " did not print what was expected), so --skip-existing cannot be relied on"
     ]
+
+
+def test_a_lock_left_in_the_project_stops_the_batch_before_it_starts(batch, capsys):
+    lock = batch.project / "backlog" / ".locks" / "task-7"
+    lock.mkdir(parents=True)
+    assert refused(batch, capsys) == [
+        "file-tickets: Backlog has left a lock in the project: backlog/.locks/task-7."
+        " Make sure no backlog command is running, remove it by hand, or add --ignore-locks"
+    ]
+    assert lock.is_dir()  # never removed by the kit
+    assert batch.run("--ignore-locks") == 0
+    captured = capsys.readouterr()
+    assert captured.err.splitlines() == [
+        "file-tickets: a lock is still in the project: backlog/.locks/task-7 (not removed)"
+    ]
+    assert lock.is_dir()
+
+
+def test_an_empty_locks_folder_is_not_a_lock(batch):
+    (batch.project / "backlog" / ".locks").mkdir()
+    assert batch.run() == 0
+
+
+def test_a_lock_left_behind_during_the_batch_is_reported_and_never_removed(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, leave_lock=True)
+    assert batch.run() == 0
+    assert capsys.readouterr().err.splitlines() == [
+        "file-tickets: 2 locks are still in the project: backlog/.locks/task-1,"
+        " backlog/.locks/task-2 (not removed)"
+    ]
+    assert sorted(p.name for p in (batch.project / "backlog" / ".locks").iterdir()) == [
+        "task-1", "task-2",
+    ]

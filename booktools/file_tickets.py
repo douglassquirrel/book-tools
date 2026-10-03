@@ -6,6 +6,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 
 from booktools import cli
 from booktools.cli import Refusal
@@ -53,6 +54,12 @@ def _run(args):
         raise Refusal(
             f"{args.project} is not a Backlog project (it has no backlog/config.yml);"
             " run backlog init there first"
+        )
+    locks = _locks(args.project)
+    if locks and not args.ignore_locks:
+        raise Refusal(
+            f"Backlog has left a lock in the project: {', '.join(locks)}."
+            " Make sure no backlog command is running, remove it by hand, or add --ignore-locks"
         )
     if args.dry_run:
         if args.skip_existing:
@@ -115,7 +122,20 @@ def _run(args):
         }
         _save(args.results, records)
     print(f"{filed} filed, {failed} failed, {skipped} skipped")
+    locks = _locks(args.project)
+    if locks:
+        count = "a lock is" if len(locks) == 1 else f"{len(locks)} locks are"
+        still = f"{count} still in the project: {', '.join(locks)} (not removed)"
+        print(f"file-tickets: {still}", file=sys.stderr)
     return 1 if failed else 0
+
+
+def _locks(project):
+    """The locks Backlog has left in the project. The kit never removes one."""
+    folder = os.path.join(project, "backlog", ".locks")
+    if not os.path.isdir(folder):
+        return []
+    return [f"backlog/.locks/{name}" for name in sorted(os.listdir(folder))]
 
 
 def _titles(project):
