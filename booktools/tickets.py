@@ -142,3 +142,39 @@ def created_id(output):
     """The id of the ticket `backlog task create` said it made, or None."""
     found = re.search(r"^Created task (\S+)", output, re.M)
     return found.group(1) if found else None
+
+
+def tidy(text):
+    """`text` as Backlog stores a description or a comment: both ends trimmed, CRLF
+    made LF, and a run of blank lines made one."""
+    return re.sub(r"\n{3,}", "\n\n", text.replace("\r\n", "\n")).strip()
+
+
+def mismatches(ticket, viewed):
+    """What differs between `ticket` as sent and `viewed`, the "task" object that
+    `backlog task view --json` returned for it. An empty list means it arrived whole."""
+    found = []
+    if viewed.get("title") != ticket.title:
+        found.append("the title came back different")
+    sent = tidy(ticket.description) if ticket.description is not None else ""
+    if (viewed.get("description") or "") != sent:
+        found.append("the description came back different")
+    if ticket.priority and (viewed.get("priority") or "").lower() != ticket.priority:
+        found.append(f"the priority came back as {viewed.get('priority') or 'nothing'}")
+    if ticket.labels and viewed.get("labels") != ticket.labels:
+        found.append(f"the labels came back as {', '.join(viewed.get('labels') or []) or 'nothing'}")
+    for name, wanted in (("milestone", ticket.milestone), ("status", ticket.status)):
+        got = viewed.get(name)
+        if wanted and (got or "").casefold() != wanted.casefold():
+            found.append(f"the {name} came back as {got or 'nothing'}")
+    comments = viewed.get("comments") or []
+    if len(comments) != len(ticket.comments):
+        count = "1 comment" if len(comments) == 1 else f"{len(comments)} comments"
+        found.append(f"{count} came back where {len(ticket.comments)} were sent")
+        return found
+    for number, ((author, text), got) in enumerate(zip(ticket.comments, comments), 1):
+        if got.get("body") != tidy(text):
+            found.append(f"comment {number} came back different")
+        if (got.get("author") or None) != author:
+            found.append(f"the author of comment {number} came back different")
+    return found

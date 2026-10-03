@@ -135,3 +135,71 @@ def test_reads_the_new_id_from_what_create_printed():
     assert created_id("Created task FC-12") == "FC-12"
     assert created_id("No Backlog.md project found. Run `backlog init` to initialize.\n") is None
     assert created_id("") is None
+
+
+def test_tidy_does_exactly_what_backlog_does_to_a_description():
+    from booktools.tickets import tidy
+
+    assert tidy("  Line one\r\n\r\n\r\n\r\nLine two  \n") == "Line one\n\nLine two"
+    assert tidy("a  \nb\n\nc\n\n\nd") == "a  \nb\n\nc\n\nd"  # spaces inside are kept
+    assert tidy("\tcurly ’ — `x` $(y) \U0001f600") == "curly ’ — `x` $(y) \U0001f600"
+
+
+def viewed(**changes):
+    task = {
+        "id": "TASK-1",
+        "title": FULL["title"],
+        "description": FULL["description"],
+        "status": "To Do",
+        "priority": "medium",
+        "labels": ["ch3", "fact-check-2"],
+        "milestone": "First feedback",
+        "comments": [
+            {"index": 1, "body": "Source: the log", "author": "Claude", "createdAt": "x"},
+            {"index": 2, "body": "No author here", "author": None, "createdAt": "x"},
+        ],
+    }
+    task.update(changes)
+    return task
+
+
+def differing(**changes):
+    from booktools.tickets import mismatches
+
+    (ticket,) = parse_tickets(json.dumps([FULL]))
+    return mismatches(ticket, viewed(**changes))
+
+
+def test_a_ticket_that_came_back_as_sent_has_no_mismatch():
+    assert differing() == []
+
+
+def test_a_description_is_compared_after_backlog_s_own_tidying_and_nothing_more():
+    from booktools.tickets import mismatches
+
+    (ticket,) = parse_tickets(json.dumps([{"title": "T", "description": " a\r\n\n\n\nb "}]))
+    assert mismatches(ticket, {"title": "T", "description": "a\n\nb", "comments": []}) == []
+    assert mismatches(ticket, {"title": "T", "description": "a\nb", "comments": []}) == [
+        "the description came back different"
+    ]
+    (bare,) = parse_tickets('[{"title": "T"}]')
+    assert mismatches(bare, {"title": "T", "description": None, "comments": []}) == []
+
+
+def test_each_thing_that_came_back_different_is_named():
+    assert differing(title=FULL["title"] + " ") == ["the title came back different"]
+    assert differing(description="## Current state\n\n**Book now says:** 12 pint") == [
+        "the description came back different"
+    ]
+    assert differing(priority=None) == ["the priority came back as nothing"]
+    assert differing(labels=["ch3"]) == ["the labels came back as ch3"]
+    assert differing(milestone=None, status="Done") == [
+        "the milestone came back as nothing",
+        "the status came back as Done",
+    ]
+    one_comment = viewed()["comments"][:1]
+    assert differing(comments=one_comment) == ["1 comment came back where 2 were sent"]
+    swapped = [dict(viewed()["comments"][0], author="Ed"), viewed()["comments"][1]]
+    assert differing(comments=swapped) == ["the author of comment 1 came back different"]
+    altered = [viewed()["comments"][0], dict(viewed()["comments"][1], body="No author")]
+    assert differing(comments=altered) == ["comment 2 came back different"]
