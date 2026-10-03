@@ -35,10 +35,17 @@ def revise(paragraph, change, stamp):
     run = first.run
     if last.run is not run:
         raise NotImplementedError
+    cut_left = k1 > 0
+    cut_right = k2 < len(last.units)
     before = xml[run.start : first.t.start]
-    left = before + _text(first.units[:k1]) + "</w:r>"
-    deleted = _shell(xml, run) + _text(first.units[k1:k2]) + "</w:r>"
-    right = _shell(xml, run) + _text(last.units[k2:]) + xml[last.t.end : run.end]
+    after = xml[last.t.end : run.end]
+    whole = k1 == 0 and k2 == len(first.units)
+    text = xml[first.t.start : first.t.end] if whole else _text(first.units[k1:k2])
+    left = before + _text(first.units[:k1]) + "</w:r>" if cut_left else ""
+    deleted = (
+        (_shell(xml, run) if cut_left else before) + text + ("</w:r>" if cut_right else after)
+    )
+    right = _shell(xml, run) + _text(last.units[k2:]) + after if cut_right else ""
     return (
         xml[: run.start]
         + left

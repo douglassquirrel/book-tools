@@ -23,3 +23,22 @@ def test_replaces_words_inside_one_run_keeping_its_formatting_on_every_piece():
         '<w:r w:rsidR="00AB"><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> brown fox</w:t></w:r>'
         "</w:p>"
     )
+
+
+def test_a_change_at_the_very_start_or_end_or_of_the_whole_run_leaves_no_empty_run():
+    xml = '<w:p><w:r><w:t xml:space="preserve">One two </w:t></w:r></w:p>'
+    change = '<w:ins w:id="8"' + STAMP + "><w:r><w:t>X</w:t></w:r></w:ins>"
+    assert revise(Paragraph(xml), Change(0, 3, "X", del_id=7, ins_id=8), STAMP) == (
+        "<w:p>" + DEL + "<w:r><w:delText>One</w:delText></w:r></w:del>" + change
+        + '<w:r><w:t xml:space="preserve"> two </w:t></w:r></w:p>'
+    )
+    assert revise(Paragraph(xml), Change(4, 8, "X", del_id=7, ins_id=8), STAMP) == (
+        '<w:p><w:r><w:t xml:space="preserve">One </w:t></w:r>'
+        + DEL + '<w:r><w:delText xml:space="preserve">two </w:delText></w:r></w:del>' + change
+        + "</w:p>"
+    )
+    # The whole run: nothing is cut, and the text element keeps its own attributes.
+    assert revise(Paragraph(xml), Change(0, 8, "X", del_id=7, ins_id=8), STAMP) == (
+        "<w:p>" + DEL + '<w:r><w:delText xml:space="preserve">One two </w:delText></w:r></w:del>'
+        + change + "</w:p>"
+    )
