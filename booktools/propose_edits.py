@@ -12,7 +12,7 @@ from booktools.docx import Docx, DocxError
 from booktools.editsfile import EditsFileError, parse_edits
 from booktools.manuscript import Manuscript
 from booktools.plan import PlanError, plan
-from booktools.propose import apply, highest_id, verify
+from booktools.propose import apply, edit_results, highest_id, verify
 from booktools.report import edit_line
 
 
@@ -92,15 +92,26 @@ def _run(args, now):
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         copy = os.path.join(scratch, "copy.docx")
         docx.write_copy(copy, changed)
-        results = verify(parts, Docx(copy).texts(), located, args.author, dates)
-        for found in located:
-            print(edit_line(found, found.text, _place(manuscript, found), "PASS"))
+        written = Docx(copy).texts()
+        results = verify(parts, written, located, args.author, dates)
+        sound = all(passed for _, passed, _ in results)
+        for found, passed in zip(located, edit_results(parts, written, located)):
+            status = "PASS" if passed else "FAIL"
+            print(edit_line(found, found.text, _place(manuscript, found), status))
         for name, passed, detail in results:
             print(f"{name}: {'PASS' if passed else 'FAIL'}: {detail}")
-        shutil.move(copy, args.out)
+        if sound or args.keep_on_failure:
+            shutil.move(copy, args.out)
+    if not sound:
+        outcome = (
+            f"the failed copy was kept at {args.out}"
+            if args.keep_on_failure
+            else f"{args.out} was not written"
+        )
+        print(f"propose-edits: verification failed; {outcome}", file=sys.stderr)
+        return 1
     print(f"wrote {args.out}")
     return 0
-
 
 def _count(number, noun):
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
@@ -136,6 +147,11 @@ def _parser():
     )
     parser.add_argument(
         "--force", action="store_true", help="write the copy even if a file of that name exists"
+    )
+    parser.add_argument(
+        "--keep-on-failure",
+        action="store_true",
+        help="keep the copy for inspection even if its verification fails",
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser

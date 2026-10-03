@@ -238,3 +238,28 @@ def highest_id(parts):
     """The highest w:id in any of `parts`; new revisions are numbered above it."""
     found = [int(n) for xml in parts.values() for n in re.findall(r'\bw:id="(\d+)"', xml)]
     return max(found, default=0)
+
+
+def edit_results(parts, out, located):
+    """For each change in `located`, whether its own paragraph in the copy `out` reads
+    as the original when rejected and as the edits ask when accepted."""
+    ids = _ids(located)
+    results = []
+    for found in located:
+        part, number = found.target.part, found.target.number
+        spans = paragraph_spans(out[part])
+        if number > len(spans):
+            results.append(False)
+            continue
+        start, end, _ = spans[number - 1]
+        paragraph = out[part][start:end]
+        wanted = found.text
+        here = [f for f in located if (f.target.part, f.target.number) == (part, number)]
+        for other in sorted(here, key=lambda f: f.start, reverse=True):
+            wanted = wanted[: other.start] + other.edit.replace + wanted[other.end :]
+        nfc = unicodedata.normalize
+        results.append(
+            nfc("NFC", Paragraph(reject(paragraph, ids)).text) == nfc("NFC", found.text)
+            and nfc("NFC", Paragraph(accept(paragraph, ids)).text) == nfc("NFC", wanted)
+        )
+    return results

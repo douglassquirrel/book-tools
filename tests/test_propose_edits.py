@@ -230,3 +230,51 @@ def test_a_date_that_cannot_be_read_is_refused(book, capsys):
         "propose-edits: --date must be like 2026-10-03T14:46 (London time, or UTC with --utc),"
         " or carry an offset such as +01:00 or Z"
     ]
+
+
+def spoil(monkeypatch, old, new):
+    """Make the command write a copy in which `old` has become `new`."""
+    import booktools.propose_edits as command
+
+    real = command.apply
+
+    def spoilt(parts, located, author, dates):
+        out = real(parts, located, author, dates)
+        assert old in out["word/document.xml"]
+        out["word/document.xml"] = out["word/document.xml"].replace(old, new, 1)
+        return out
+
+    monkeypatch.setattr(command, "apply", spoilt)
+
+
+def test_a_copy_that_fails_verification_is_not_kept_and_the_exit_code_is_1(book, capsys, monkeypatch):
+    spoil(monkeypatch, "<w:t>is not</w:t>", "<w:t>is surely not</w:t>")
+    assert book.run() == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "E1 | body, paragraph 3 | … at dusk, and the keeper [isn’t → is not]"
+        " one to waste oil. | no contractions | FAIL",
+        "E2 | body, paragraph 4 | … wrote every figure in a [large  →]ledger. | cut | PASS",
+        "E3 | Chapter 1, note 1 (endnote:1) | …Recorded by Trinity House[→ , London]"
+        " in the station log. | place | PASS",
+        "reject all: PASS: every paragraph reads as in the original",
+        "accept all: FAIL: paragraph 3 of word/document.xml reads"
+        " '… dusk, and the keeper is surely not one to waste oil.' but the edits ask for"
+        " '… dusk, and the keeper is not one to waste oil.'",
+        "revisions: PASS: 4 revisions for 3 edits, all by Claude at 2026-10-03T14:46:00Z",
+        "package: PASS: 2 parts changed, each well-formed; everything else byte-identical",
+    ]
+    assert captured.err.splitlines() == [
+        f"propose-edits: verification failed; {book.out} was not written"
+    ]
+    assert not book.out.exists()
+    assert list(book.scratch.iterdir()) == []
+
+
+def test_keep_on_failure_keeps_the_failed_copy_for_inspection(book, capsys, monkeypatch):
+    spoil(monkeypatch, "<w:t>is not</w:t>", "<w:t>is surely not</w:t>")
+    assert book.run("--keep-on-failure") == 1
+    assert capsys.readouterr().err.splitlines() == [
+        f"propose-edits: verification failed; the failed copy was kept at {book.out}"
+    ]
+    assert zipfile.is_zipfile(book.out)
