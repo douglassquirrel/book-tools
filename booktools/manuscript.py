@@ -2,11 +2,16 @@
 
 import re
 
+from booktools.paragraph import Paragraph
 from booktools.xmlscan import TAG, paragraph_spans
 
 BODY = "word/document.xml"
 ENDNOTES = "word/endnotes.xml"
 FOOTNOTES = "word/footnotes.xml"
+SETTINGS = "word/settings.xml"
+STYLES = "word/styles.xml"
+# A style's id and its name, which says "heading 2" whatever the id is.
+STYLE = re.compile(r'<w:style\b[^>]*\bw:styleId="([^"]*)"[^>]*>\s*<w:name w:val="([^"]*)"/>')
 
 
 class Target:
@@ -28,6 +33,8 @@ class Manuscript:
         self.body = []  # Targets
         self.endnotes = []  # one list of Targets per endnote, in document order
         self.footnotes = []
+        self._markers = {"endnote": [], "footnote": []}  # offsets in the body, per note
+        self._outline = None
         for number, (start, end, depth) in enumerate(paragraph_spans(parts[BODY]), 1):
             if depth == 1:
                 self.body.append(Target(BODY, number, start, end, "body"))
@@ -56,6 +63,7 @@ class Manuscript:
                 continue
             first, last = spans[_id(found.group(1))]
             place = f"{kind}:{len(notes) + 1}"
+            self._markers[kind].append(found.start())
             notes.append(
                 [
                     Target(part, number, start, end, place)
@@ -64,6 +72,75 @@ class Manuscript:
                 ]
             )
         return notes
+
+    def note_label(self, kind, number):
+        """How the book shows the note counted `number`: under its heading, with the
+        number it prints as, then the count, as "Chapter 3, note 7 (endnote:42)"."""
+        count = f"{kind}:{number}"
+        restart = self._restart(kind)
+        if restart == "eachPage":
+            return count  # the printed number depends on the page it falls on
+        outline = self._outlined()
+        markers = [self._paragraph_at(offset) for offset in self._markers[kind]]
+        here = markers[number - 1]
+        level = None
+        if restart == "eachSect":
+            section = outline[here][0]
+            number = sum(1 for m in markers[:number] if outline[m][0] == section)
+            level = self._chapter_level()
+        title = None
+        for _, heading_level, text in reversed(outline[: here + 1]):
+            if heading_level and (level is None or heading_level == level):
+                title = text
+                break
+        return f"{title}, note {number} ({count})" if title else f"note {number} ({count})"
+
+    def _restart(self, kind):
+        """Where this kind of note starts again from 1: continuous, eachSect or eachPage."""
+        block = re.compile(rf"<w:{kind}Pr>.*?</w:{kind}Pr>", re.S)
+        for xml in (self.parts.get(SETTINGS, ""), self.parts[BODY]):
+            for found in block.finditer(xml):
+                setting = re.search(r'<w:numRestart w:val="(\w+)"/>', found.group(0))
+                if setting and setting.group(1) != "continuous":
+                    return setting.group(1)
+        return "continuous"
+
+    def _outlined(self):
+        """For each body paragraph: (its section, its heading level or None, its text)."""
+        if self._outline is None:
+            names = dict(STYLE.findall(self.parts.get(STYLES, "")))
+            xml = self.parts[BODY]
+            self._outline = []
+            section = 0
+            for target in self.body:
+                paragraph = xml[target.start : target.end]
+                style = re.search(r'<w:pStyle w:val="([^"]*)"/>', paragraph)
+                level = None
+                if style:
+                    name = names.get(style.group(1), style.group(1))
+                    found = re.match(r"heading ?(\d)$", name, re.I)
+                    level = int(found.group(1)) if found else None
+                text = Paragraph(paragraph).text.strip()[:45] if level else ""
+                self._outline.append((section, level if text else None, text))
+                if "<w:sectPr" in paragraph:
+                    section += 1
+        return self._outline
+
+    def _paragraph_at(self, offset):
+        """The index in `body` of the paragraph holding the body offset `offset`."""
+        for index, target in enumerate(self.body):
+            if target.start <= offset < target.end:
+                return index
+        raise IndexError(offset)
+
+    def _chapter_level(self):
+        """The heading level that sections most often open with: where notes restart."""
+        opens = {}
+        for section, level, _ in self._outlined():
+            if level and section not in opens:
+                opens[section] = level
+        levels = list(opens.values())
+        return max(set(levels), key=lambda level: (levels.count(level), level)) if levels else None
 
 
 def _id(attrs):
