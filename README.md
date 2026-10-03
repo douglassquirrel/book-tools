@@ -12,7 +12,7 @@ planned and will be replaced by full instructions as each command is built.
 
 | Command | Job |
 |---|---|
-| `track-changes` | Apply a list of edits to a `.docx` as real tracked changes, one per edit, and verify the result, so the author can accept or reject each in Word |
+| `propose-edits` | Write a copy of a `.docx` with a list of edits in it as real tracked changes, one per edit, and verify the copy, so the author can accept or reject each in Word; the original is only read |
 | `file-tickets` | File tickets into a Backlog project from a JSON list, with every character of the text arriving unchanged |
 | `note-map` | Give every footnote and endnote a permanent ID and keep a map to its current number, so Word can renumber freely and your records never need renumbering |
 | `compare-saves` | Say what changed between two saves of a manuscript: words, formatting and structure |
