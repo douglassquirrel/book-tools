@@ -489,3 +489,18 @@ def test_an_interrupted_run_leaves_no_lock_no_part_written_text_and_no_scratch(
     )
     assert sources.made() == []
     assert list(sources.scratch.iterdir()) == []
+
+
+def test_page_images_are_always_given_to_the_programs_by_their_real_path(sources, tmp_path):
+    # Tesseract's image library on a Mac sends a path that starts with /tmp somewhere
+    # else, and /tmp there is a link to /private/tmp. Whatever --tmp is called, the
+    # programs must be given the folder's real path.
+    link = tmp_path / "link-to-scratch"
+    link.symlink_to(sources.scratch)
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert main([str(sources.folder), "--tmp", str(link), "--no-rotate"]) == 0
+    real = str(sources.scratch.resolve())
+    prefixes = [call[9] for call in sources.tools.calls() if call[0] == "-f"]
+    images = [call[0] for call in sources.tools.calls() if call[0].endswith(".png")]
+    assert prefixes and images
+    assert all(path.startswith(real) for path in prefixes + images)

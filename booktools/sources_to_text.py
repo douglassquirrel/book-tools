@@ -272,7 +272,10 @@ class Job:
     """One run's folders and settings, and the conversion of one file at a time."""
 
     def __init__(self, folder, out, scratch, args, image, clock, deadline, redo=False):
-        self.folder, self.out, self.scratch, self.args = folder, out, scratch, args
+        self.folder, self.out, self.args = folder, out, args
+        # The real path: on a Mac, Tesseract's image library sends a path that starts
+        # with /tmp (a link to /private/tmp) to another folder and then finds nothing.
+        self.scratch = os.path.realpath(scratch)
         self.image = image  # Pillow's Image module, or None to read pages as they are
         self.clock, self.deadline = clock, deadline
         self.redo = redo  # write NAME.txt.new and start afresh, leaving NAME.txt alone
