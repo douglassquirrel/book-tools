@@ -88,3 +88,13 @@ def test_a_change_across_three_runs_keeps_each_run_s_own_formatting_in_the_delet
         '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> fox </w:t></w:r>'
         "</w:p>"
     )
+
+
+def test_a_pure_deletion_writes_no_insertion():
+    xml = "<w:p><w:r><w:t>The big cat</w:t></w:r></w:p>"
+    assert revise(Paragraph(xml), Change(4, 8, "", del_id=7), STAMP) == (
+        '<w:p><w:r><w:t xml:space="preserve">The </w:t></w:r>'
+        + DEL
+        + '<w:r><w:delText xml:space="preserve">big </w:delText></w:r></w:del>'
+        "<w:r><w:t>cat</w:t></w:r></w:p>"
+    )

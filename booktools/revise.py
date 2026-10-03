@@ -55,12 +55,21 @@ def revise(paragraph, change, stamp):
         xml[: head.start]
         + left
         + f'<w:del w:id="{change.del_id}"{stamp}>{_as_deleted(deleted)}</w:del>'
-        + f'<w:ins w:id="{change.ins_id}"{stamp}><w:r>{_formatting(xml, head)}'
-        + _text([_escape(change.new)])
-        + "</w:r></w:ins>"
+        + _inserted(xml, head, change, stamp)
         + right
         + xml[tail.end :]
     )
+
+def _inserted(xml, run, change, stamp):
+    """The new text as a tracked insertion formatted as `run` is, or nothing."""
+    if not change.new:
+        return ""
+    return (
+        f'<w:ins w:id="{change.ins_id}"{stamp}><w:r>{_formatting(xml, run)}'
+        + _text([_escape(change.new)])
+        + "</w:r></w:ins>"
+    )
+
 
 def _piece_holding(paragraph, offset):
     """The piece of text holding the character at `offset`, and the offset within it."""
