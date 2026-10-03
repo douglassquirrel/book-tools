@@ -1,5 +1,6 @@
 """Makes the planned changes in the parts of a document and proves the result."""
 
+import re
 import unicodedata
 
 from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
@@ -57,12 +58,7 @@ def verify(parts, out, located, author, dates):
     return [
         _reject_all(parts, out, ids),
         _accept_all(parts, out, located, ids),
-        (
-            "revisions",
-            True,
-            f"{_count(len(ids), 'revision')} for {_count(len(located), 'edit')},"
-            f" all by {author} at {dates[0]}",
-        ),
+        _revisions(parts, out, located, ids, author, dates),
         (
             "package",
             True,
@@ -102,6 +98,55 @@ def _accept_all(parts, out, located, ids):
             return ("accept all", False, fault)
     made = _count(len(located), "edit")
     return ("accept all", True, f"the original with exactly the {made} made")
+
+
+def _revisions(parts, out, located, ids, author, dates):
+    """Each edit must have exactly its own revisions, stamped with this run's author
+    and date, and the copy must hold no other new tracked change."""
+    seen = {}  # id -> [(part, attributes as written)] for elements of the expected name
+    before = after = 0
+    for part in TEXT_PARTS:
+        if part not in parts:
+            continue
+        before += len(_tracked(parts[part]))
+        for name, attrs in _tracked(out[part]):
+            after += 1
+            found = re.search(r'\bw:id="(-?\d+)"', attrs)
+            id = int(found.group(1)) if found else None
+            if ids.get(id) == name:
+                seen.setdefault(id, []).append((part, attrs))
+    for id in sorted(ids):
+        if id not in seen:
+            return ("revisions", False, f"revision {id} ({ids[id]}) is missing from the copy")
+        if len(seen[id]) > 1:
+            return ("revisions", False, f"revision {id} appears {len(seen[id])} times in the copy")
+        part, attrs = seen[id][0]
+        if attrs != f' w:id="{id}"' + _stamp(author, dates, parts[part]):
+            fault = f"revision {id} in {part} does not carry the author and date of this run"
+            return ("revisions", False, fault)
+    if after - before != len(ids):
+        return (
+            "revisions",
+            False,
+            f"the copy holds {after - before} tracked changes more than the original;"
+            f" the edits account for {len(ids)}",
+        )
+    return (
+        "revisions",
+        True,
+        f"{_count(len(ids), 'revision')} for {_count(len(located), 'edit')},"
+        f" all by {author} at {dates[0]}",
+    )
+
+
+def _tracked(xml):
+    """(name, attributes) of every tracked insertion, deletion or move that wraps content."""
+    names = ("w:ins", "w:del", "w:moveFrom", "w:moveTo")
+    return [
+        (tag.group("name"), tag.group("attrs"))
+        for tag in TAG.finditer(xml)
+        if tag.group("name") in names and not tag.group("close") and not tag.group("empty")
+    ]
 
 
 def _texts(xml):

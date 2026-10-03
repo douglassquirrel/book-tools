@@ -132,3 +132,31 @@ def test_accept_all_fails_when_an_edit_was_not_made_at_all():
         False,
         "paragraph 1 of word/endnotes.xml reads ' note' but the edits ask for 'the note'",
     )
+
+
+def test_revisions_fails_when_one_carries_another_author_or_date():
+    results = checked((BODY, f'<w:ins w:id="2"{BOTH}>', '<w:ins w:id="2" w:author="Eve" w:date="2026-10-03T14:46:00Z">'))
+    assert results[2] == (
+        "revisions",
+        False,
+        "revision 2 in word/document.xml does not carry the author and date of this run",
+    )
+    other_date = BOTH.replace("14:46", "14:47")
+    assert failed(checked((BODY, f'<w:del w:id="3"{BOTH}>', f'<w:del w:id="3"{other_date}>'))) == [
+        "revisions"
+    ]
+
+
+def test_revisions_fails_when_an_edit_does_not_have_exactly_its_own_pair():
+    missing = checked((ENDNOTES, f'<w:ins w:id="6"{LOCAL}><w:r><w:t>the</w:t></w:r></w:ins>', ""))
+    assert missing[2] == ("revisions", False, "revision 6 (w:ins) is missing from the copy")
+    extra = f'<w:ins w:id="9"{BOTH}><w:r><w:t>!</w:t></w:r></w:ins>'
+    added = checked((BODY, "<w:sectPr/>", "<w:p>" + extra + "</w:p><w:sectPr/>"))
+    assert added[2] == (
+        "revisions",
+        False,
+        "the copy holds 7 tracked changes more than the original; the edits account for 6",
+    )
+    twice = f'<w:ins w:id="2"{BOTH}><w:r><w:t>slow</w:t></w:r></w:ins>'
+    doubled = checked((BODY, twice, twice + twice))
+    assert doubled[2] == ("revisions", False, "revision 2 appears 2 times in the copy")
