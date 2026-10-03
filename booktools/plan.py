@@ -70,6 +70,7 @@ def plan(edits, manuscript, highest_id):
         new = edit.replace[prefix : len(edit.replace) - suffix]
         change = Change(start + prefix, end - suffix, new, after=prefix > 0)
         located.append(Located(edit, target, start, end, change))
+    problems.extend(_overlaps(located))
     if problems:
         raise PlanError(problems)
     located.sort(
@@ -89,6 +90,25 @@ def plan(edits, manuscript, highest_id):
             highest_id += 1
             change.ins_id = highest_id
     return located
+
+
+def _overlaps(located):
+    """A problem for each edit whose "find" text shares characters with an earlier edit's."""
+    problems = []
+    for index, later in enumerate(located):
+        for earlier in located[:index]:
+            same = (earlier.target.part, earlier.target.start) == (
+                later.target.part,
+                later.target.start,
+            )
+            if same and earlier.start < later.end and later.start < earlier.end:
+                where = later.target.place
+                where = "the body" if where == "body" else where
+                problems.append(
+                    f"{later.edit.name}: overlaps {earlier.edit.name} in paragraph"
+                    f" {later.target.number} of {where}; combine them into one edit"
+                )
+    return problems
 
 
 def _space(edit, manuscript):

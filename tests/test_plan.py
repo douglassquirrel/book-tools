@@ -175,3 +175,17 @@ def test_an_edit_across_a_barrier_or_touching_an_existing_change_is_refused_by_n
         'edit 4: the "find" text touches an existing tracked insertion;'
         " accept or reject that change in Word first",
     ]
+
+
+def test_two_edits_whose_text_overlaps_are_an_error():
+    m = Manuscript(body(p("the quick brown fox jumps")))
+    edits = [edit(1, "quick brown", "x", "A"), edit(2, "brown fox", "y", "B"), edit(3, "jumps", "z")]
+    assert problems(edits, m) == [
+        "edit 2 (B): overlaps edit 1 (A) in paragraph 1 of the body; combine them into one edit"
+    ]
+
+
+def test_edits_that_meet_end_to_start_do_not_overlap():
+    m = Manuscript(body(p("the quick brown fox")))
+    located = plan([edit(1, "quick ", "x "), edit(2, "brown", "y")], m, highest_id=0)
+    assert [(l.start, l.end) for l in located] == [(4, 10), (10, 15)]
