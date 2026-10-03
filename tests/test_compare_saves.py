@@ -291,3 +291,35 @@ def test_git_with_two_revisions_compares_the_two_committed_versions(saves, repos
         ["show", "HEAD:./Book.docx"],
         ["log", "-1", "--format=%H %cI", "HEAD"],
     ]
+
+
+def test_git_refusals_name_the_cause(saves, repository, capsys, monkeypatch, tmp_path):
+    def refused(*args):
+        assert saves.run(*args) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        return captured.err.splitlines()
+
+    book = str(repository.file)
+    assert refused("--git", "no-such-rev", book) == [
+        "compare-saves: no-such-rev does not hold Book.docx"
+        " (git said: fatal: invalid object name 'no-such-rev'.)"
+    ]
+    assert refused("--git", book) == ["compare-saves: with --git give OLDREV [NEWREV] FILE.docx"]
+    assert refused("--git", "a", "b", "c", book) == [
+        "compare-saves: with --git give OLDREV [NEWREV] FILE.docx"
+    ]
+    saves.git.control(not_a_repository=True)
+    assert refused("--git", "HEAD~1", book) == [f"compare-saves: {book} is not in a git repository"]
+    monkeypatch.setenv("PATH", only(saves.pandoc))  # no git at all
+    assert refused("--git", "HEAD~1", book) == ["compare-saves: git was not found; --git needs it"]
+    assert list(saves.scratch.iterdir()) == []
+
+
+def test_a_git_that_does_not_answer_exits_1(saves, repository, capsys):
+    saves.git.control(hang=True)
+    assert saves.run("--git", "HEAD~1", str(repository.file), "--timeout", "2") == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "compare-saves: git did not answer within 2 seconds"
+    ]
+    assert list(saves.scratch.iterdir()) == []
