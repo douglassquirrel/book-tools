@@ -1,0 +1,20 @@
+# Development settings only: the commands themselves need nothing but Python 3.9's
+# standard library. `.venv/bin/pytest` and `.venv/bin/ruff check .` need no flags.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers --cov=booktools --cov-report=term-missing"
+markers = [
+    "tier1: pure functions, no files outside the test's own temporary folder",
+    "tier2: whole commands run against stub programs and fixture documents",
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
