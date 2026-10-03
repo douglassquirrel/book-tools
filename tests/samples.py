@@ -57,16 +57,49 @@ def note(kind, id, text):
     )
 
 
+TYPES = "application/vnd.openxmlformats-officedocument.wordprocessingml"
+RELATIONS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE = "http://schemas.openxmlformats.org/package/2006"
+# A real picture, one white pixel, so that nothing reading the package chokes on it.
+PIXEL = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0fIDATx\x01\x01\x04\x00\xfb\xff\x00\xff\xff\xff\x05\xfe\x02\xfeIfn+\x00\x00\x00\x00IEND\xaeB`\x82'
+
+
 def sample_parts(body=None):
-    """The parts of the sample document; `body` replaces its paragraphs if given."""
+    """The parts of the sample document, a complete package that Word and pandoc can
+    open; `body` replaces its paragraphs if given."""
     paragraphs = "".join(BODY_PARAGRAPHS if body is None else body)
+    overrides = "".join(
+        f'<Override PartName="/word/{name}.xml" ContentType="{TYPES}.{kind}+xml"/>'
+        for name, kind in (
+            ("document", "document.main"),
+            ("endnotes", "endnotes"),
+            ("footnotes", "footnotes"),
+            ("styles", "styles"),
+            ("settings", "settings"),
+        )
+    )
+    relations = "".join(
+        f'<Relationship Id="rId{number}" Type="{RELATIONS}/{name}" Target="{name}.xml"/>'
+        for number, name in enumerate(("styles", "settings", "endnotes", "footnotes"), 1)
+    )
     return {
-        "[Content_Types].xml": DECLARATION + "<Types"
-        ' xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-        "_rels/.rels": DECLARATION + "<Relationships"
-        ' xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>',
+        "[Content_Types].xml": DECLARATION
+        + f'<Types xmlns="{PACKAGE}/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Default Extension="png" ContentType="image/png"/>'
+        + overrides
+        + '<Override PartName="/docProps/core.xml"'
+        ' ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>',
+        "_rels/.rels": DECLARATION
+        + f'<Relationships xmlns="{PACKAGE}/relationships">'
+        f'<Relationship Id="rId1" Type="{RELATIONS}/officeDocument" Target="word/document.xml"/>'
+        f'<Relationship Id="rId2" Type="{PACKAGE}/relationships/metadata/core-properties"'
+        ' Target="docProps/core.xml"/></Relationships>',
         "word/document.xml": DECLARATION
         + f"<w:document {W} {R} {W16DU}><w:body>{paragraphs}<w:sectPr/></w:body></w:document>",
+        "word/_rels/document.xml.rels": DECLARATION
+        + f'<Relationships xmlns="{PACKAGE}/relationships">{relations}</Relationships>',
         "word/endnotes.xml": DECLARATION
         + f"<w:endnotes {W}>"
         + separators("endnote")
@@ -90,11 +123,13 @@ def sample_parts(body=None):
         '<w:basedOn w:val="Heading1"/></w:style>'
         "</w:styles>",
         "word/settings.xml": DECLARATION + f"<w:settings {W}/>",
-        "word/media/image1.png": b"\x89PNG\r\n\x1a\n not really a picture",
+        "word/media/image1.png": PIXEL,
         "docProps/core.xml": DECLARATION + "<cp:coreProperties"
-        ' xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"'
-        ' xmlns:dcterms="http://purl.org/dc/terms/"><cp:revision>3</cp:revision>'
-        "<dcterms:modified>2026-10-01T09:00:00Z</dcterms:modified></cp:coreProperties>",
+        f' xmlns:cp="{PACKAGE}/metadata/core-properties"'
+        ' xmlns:dcterms="http://purl.org/dc/terms/"'
+        ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><cp:revision>3</cp:revision>'
+        '<dcterms:modified xsi:type="dcterms:W3CDTF">2026-10-01T09:00:00Z</dcterms:modified>'
+        "</cp:coreProperties>",
     }
 
 
