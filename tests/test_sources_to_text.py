@@ -30,6 +30,8 @@ class Sources:
         self.scratch = tmp_path / "scratch"
         self.scratch.mkdir()
         monkeypatch.setenv("PATH", only(self.tools, self.pandoc))
+        # Whether or not this machine has Pillow, the tests decide what the command finds.
+        monkeypatch.setattr("booktools.sources_to_text._pillow", lambda: None, raising=False)
 
     def add(self, name, content):
         (self.folder / name).write_text(content, encoding="utf-8")
@@ -129,3 +131,44 @@ def test_min_chars_and_dpi_scale_can_be_changed(sources):
     # "pg 3" has three characters that are not spaces: no longer too few, so not read by OCR.
     assert "=== PDF page 3 of 4 ===\npg 3" in sources.text("scan.pdf.txt")
     assert sources.tools.calls()[1][4:6] == ["-scale-to", "1400"]
+
+
+def test_a_page_that_reads_clearly_better_turned_is_read_turned_and_headed_so(sources, capsys):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert sources.run(image=FakeImage) == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0] == "scan.pdf: 4 pages, 2 read by OCR, 1 turned"
+    assert captured.err == ""
+    assert sources.text("scan.pdf.txt") == (
+        f"\n=== PDF page 1 of 4 ===\n{LONG}"
+        "\n=== PDF page 2 of 4 (OCR) ===\nRead from the image of page two."
+        "\n=== PDF page 3 of 4 (OCR, page turned 90\u00b0 clockwise) ===\n"
+        "A table set sideways. [read turned 90]"
+        f"\n=== PDF page 4 of 4 ===\n{LONG}"
+    )
+    assert sources.text(".convert-log.txt") == "scan.pdf pages=4 ocr=2 turned=1\n"
+    reads = [call[1:] for call in sources.tools.calls() if call[0].endswith(".png")]
+    # Page 2 reads well as it is: scored once, read once. Page 3: scored at each of the
+    # four turns, then read at the best.
+    assert reads == [["-", "tsv"], ["-"], ["-", "tsv"], ["-", "tsv"], ["-", "tsv"], ["-", "tsv"], ["-"]]
+    assert list(sources.scratch.iterdir()) == []
+
+
+def test_without_pillow_pages_are_read_as_they_are_and_the_run_says_so(sources, capsys):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert sources.run() == 0
+    captured = capsys.readouterr()
+    assert captured.err.splitlines() == [
+        "sources-to-text: Pillow is not installed, so each page is read as it stands and one"
+        " scanned sideways or upside down will not be noticed"
+        " (to install it: python3 -m pip install --user Pillow)"
+    ]
+    assert "=== PDF page 3 of 4 (OCR) ===\nA table set sideways." in sources.text("scan.pdf.txt")
+
+
+def test_no_rotate_tries_no_turns_and_gives_no_warning(sources, capsys):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert sources.run("--no-rotate", image=FakeImage) == 0
+    assert capsys.readouterr().err == ""
+    assert "(OCR, page turned" not in sources.text("scan.pdf.txt")
+    assert not any(call[-1] == "tsv" for call in sources.tools.calls())

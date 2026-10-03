@@ -4,12 +4,21 @@ import argparse
 import glob
 import os
 import subprocess
+import sys
 import tempfile
 import time
 
 from booktools import cli
 from booktools.cli import Refusal
-from booktools.sources import assemble, needs_ocr, split_pages
+from booktools.sources import (
+    READS_WELL,
+    TURNS,
+    assemble,
+    best_turn,
+    needs_ocr,
+    score,
+    split_pages,
+)
 
 INDEXES = ("SOURCES.md", "PDF-COVERAGE.md", ".DS_Store")
 LOG = ".convert-log.txt"
@@ -32,9 +41,20 @@ def _run(args, clock, image):
         raise Refusal(f"{folder} is not a folder")
     out = args.out or os.path.join(folder, "text")
     os.makedirs(out, exist_ok=True)
+    if args.no_rotate:
+        image = None
+    elif image is None:
+        image = _pillow()
+        if image is None:
+            print(
+                "sources-to-text: Pillow is not installed, so each page is read as it stands"
+                " and one scanned sideways or upside down will not be noticed"
+                " (to install it: python3 -m pip install --user Pillow)",
+                file=sys.stderr,
+            )
     converted = skipped = failed = 0
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
-        job = Job(folder, out, scratch, args)
+        job = Job(folder, out, scratch, args, image)
         for name in _sources(folder):
             if os.path.exists(job.target(name)):
                 continue
@@ -46,6 +66,15 @@ def _run(args, clock, image):
                 converted += 1
     print(f"{converted} converted, {skipped} skipped, {failed} failed")
     return 0
+
+
+def _pillow():
+    """Pillow's Image module if Pillow is installed, else None. It is optional."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    return Image
 
 
 def _sources(folder):
@@ -61,8 +90,9 @@ def _sources(folder):
 class Job:
     """One run's folders and settings, and the conversion of one file at a time."""
 
-    def __init__(self, folder, out, scratch, args):
+    def __init__(self, folder, out, scratch, args, image):
         self.folder, self.out, self.scratch, self.args = folder, out, scratch, args
+        self.image = image  # Pillow's Image module, or None to read pages as they are
 
     def target(self, name):
         return os.path.join(self.out, name + ".txt")
@@ -126,10 +156,28 @@ class Job:
         if not images:
             return None
         try:
-            return self.tesseract(images[0]), 0
+            return self.read_best(images[0])
         finally:
             for image in glob.glob(prefix + "*"):
                 os.remove(image)
+
+    def read_best(self, image):
+        """Read a page image, turned a quarter or half turn if that reads clearly
+        better: (the text, the clockwise turn it was read at)."""
+        if self.image is None:
+            return self.tesseract(image), 0
+        picture = self.image.open(image)
+        turned = image + ".rot.png"
+        scores = {0: score(self.tesseract(image, "tsv"))}
+        if scores[0] < READS_WELL:
+            for turn in TURNS:
+                picture.rotate(-turn, expand=True).save(turned)
+                scores[turn] = score(self.tesseract(turned, "tsv"))
+        turn = best_turn(scores)
+        if not turn:
+            return self.tesseract(image), 0
+        picture.rotate(-turn, expand=True).save(turned)
+        return self.tesseract(turned), turn
 
     def tesseract(self, image, *more):
         done = subprocess.run(
