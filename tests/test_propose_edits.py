@@ -65,3 +65,36 @@ def test_writes_a_copy_with_the_edits_as_tracked_changes_and_reports_each(book, 
         f'<w:del w:id="3"{STAMP}><w:r><w:delText>isn’t</w:delText></w:r></w:del>'
         f'<w:ins w:id="4"{STAMP}><w:r><w:t>is not</w:t></w:r></w:ins>' in body
     )
+
+
+def snapshot(folder):
+    return {path.name: path.read_bytes() for path in folder.iterdir()}
+
+
+def test_the_manuscript_and_its_folder_are_left_exactly_as_they_were(book):
+    before = snapshot(book.folder)
+    assert book.run() == 0
+    assert snapshot(book.folder) == before
+    assert list(book.scratch.iterdir()) == []  # the scratch folder was removed
+
+
+def test_every_entry_but_the_edited_parts_is_byte_identical_in_the_copy(book):
+    book.run()
+    with zipfile.ZipFile(book.manuscript) as old, zipfile.ZipFile(book.out) as new:
+        assert new.namelist() == old.namelist()
+        differing = [n for n in old.namelist() if old.read(n) != new.read(n)]
+    assert differing == ["word/document.xml", "word/endnotes.xml"]
+
+
+def test_dry_run_prints_the_same_lines_and_writes_nothing(book, capsys):
+    assert book.run("--dry-run") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "E1 | body, paragraph 3 | … at dusk, and the keeper [isn’t → is not]"
+        " one to waste oil. | no contractions | found",
+        "E2 | body, paragraph 4 | … wrote every figure in a [large  →]ledger. | cut | found",
+        "E3 | Chapter 1, note 1 (endnote:1) | …Recorded by Trinity House[→ , London]"
+        " in the station log. | place | found",
+        f"dry run: 3 edits found; {book.out} would be written; nothing written",
+    ]
+    assert not book.out.exists()
+    assert list(book.scratch.iterdir()) == []

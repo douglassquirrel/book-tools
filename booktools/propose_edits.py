@@ -25,6 +25,12 @@ def main(argv=None, now=None):
     parts = docx.texts()
     manuscript = Manuscript(parts)
     located = plan(edits, manuscript, highest_id(parts))
+    if args.dry_run:
+        for found in located:
+            print(edit_line(found, found.text, _place(manuscript, found), "found"))
+        count = f"{len(located)} edit" + ("" if len(located) == 1 else "s")
+        print(f"dry run: {count} found; {args.out} would be written; nothing written")
+        return 0
     dates = revision_dates(now())
     out = apply(parts, located, args.author, dates)
     changed = {name: text for name, text in out.items() if text != parts[name]}
@@ -60,5 +66,8 @@ def _parser():
     parser.add_argument("--in", dest="manuscript", required=True, metavar="MANUSCRIPT.docx")
     parser.add_argument("--out", required=True, metavar="NEW.docx", help="the copy to write")
     parser.add_argument("--author", default="Claude", metavar="NAME")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="show where each edit falls and write nothing"
+    )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser
