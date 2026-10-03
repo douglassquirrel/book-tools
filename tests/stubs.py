@@ -54,6 +54,10 @@ if not os.path.exists(os.path.join("backlog", "config.yml")):
     print("No Backlog.md project found. Run `backlog init` to initialize.")
     sys.exit(0)
 
+if control.get("hang_on_help") and "--help" in args:
+    time.sleep(60)
+if control.get("create_dies_silently") and args[:2] == ["task", "create"]:
+    sys.exit(3)
 if args[:3] == ["task", "view", "--help"]:
     print("Options:\n  --plain" + ("" if control.get("no_json") else "\n  --json"))
 elif args[:2] == ["task", "create"]:

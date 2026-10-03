@@ -64,3 +64,12 @@ def test_a_note_of_two_paragraphs_is_read_whole_and_a_marker_in_mid_sentence_tak
 def test_a_document_with_no_notes_has_none():
     parts = {"word/document.xml": f"<w:document {W}><w:body><w:p/></w:body></w:document>"}
     assert read_notes(Manuscript(parts)) == []
+
+
+def test_a_note_whose_marker_is_inside_a_text_box_has_no_sentence():
+    body = list(BODY_PARAGRAPHS)
+    body[8] = (
+        "<w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Boxed.</w:t></w:r>"
+        '<w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p>'
+    )
+    assert seen(sample_parts(body))[1][:3] == ("endnote:2", "Ibid.", "")

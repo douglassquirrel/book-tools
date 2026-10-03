@@ -178,3 +178,17 @@ def test_the_fonts_to_ignore_reach_the_comparison_of_each_pair():
     new = "<w:p><w:r><w:t>Cap.</w:t></w:r></w:p>"
     assert report(old, new, ignore_fonts=["Times-Roman"])[1].startswith("FONT-NAME-ONLY 0: 4 chars")
     assert report(old, new)[1].startswith("FORMAT 0: 4 chars")
+
+
+def test_a_very_large_gap_is_paired_side_by_side(monkeypatch):
+    import booktools.compare as compare
+
+    monkeypatch.setattr(compare, "LARGEST_GAP", 1)  # so that two by two counts as large
+    # Side by side: the first old with the first new (unlike: removed and added), the
+    # second with the second (alike: one paragraph, edited).
+    assert pair([A, B], [X, B_EDITED]) == [(0, None), (None, 0), (1, 1)]
+    # Whereas with every pairing weighed, an edited paragraph is found out of step.
+    monkeypatch.setattr(compare, "LARGEST_GAP", 10000)
+    assert pair([A, B], [B_EDITED, X]) == [(0, None), (1, 0), (None, 1)]
+    monkeypatch.setattr(compare, "LARGEST_GAP", 1)
+    assert pair([A, B], [B_EDITED, X]) == [(0, None), (1, None), (None, 0), (None, 1)]

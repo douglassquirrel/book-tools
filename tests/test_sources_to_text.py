@@ -504,3 +504,67 @@ def test_page_images_are_always_given_to_the_programs_by_their_real_path(sources
     images = [call[0] for call in sources.tools.calls() if call[0].endswith(".png")]
     assert prefixes and images
     assert all(path.startswith(real) for path in prefixes + images)
+
+
+def test_a_run_out_of_time_before_a_file_starts_leaves_it_for_the_next_run(sources, capsys):
+    sources.add("a.md", "first")
+    sources.add("b.md", "second, and longer")
+    # The clock is read at the start (10) and before each file (20, 30): with 15 seconds
+    # allowed the deadline is 25, so the second file is not started.
+    assert sources.run("--seconds", "15", clock=Clock(10)) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "a.md: copied",
+        "1 converted, 0 skipped, 0 failed; 1 not finished: run again to go on",
+    ]
+
+
+def test_a_file_another_worker_finished_a_moment_ago_is_not_converted_again(sources, capsys, monkeypatch):
+    import os
+
+    import booktools.sources_to_text as command
+
+    sources.add("a.md", "first")
+    real = os.mkdir
+
+    def someone_else_just_finished(path, *args):
+        real(path, *args)
+        if os.path.basename(path).startswith(".lock-"):
+            with open(os.path.join(os.path.dirname(path), "a.md.txt"), "w") as file:
+                file.write("their text")
+
+    monkeypatch.setattr(command.os, "mkdir", someone_else_just_finished)
+    assert sources.run() == 0
+    assert capsys.readouterr().out.splitlines() == ["0 converted, 0 skipped, 0 failed"]
+    assert sources.text("a.md.txt") == "their text"
+    assert sources.made() == ["a.md.txt"]  # and the lock was released
+
+
+def test_redo_reports_a_changed_page_count_and_a_file_that_fails(sources, capsys):
+    sources.add("grown.pdf", pdf([LONG]))
+    sources.add("bad.pdf", pdf([LONG, LONG]))
+    assert sources.run() == 0
+    sources.add("grown.pdf", pdf([LONG, LONG + " A second page now."]))
+    sources.tools.control(fail_on=["bad.pdf"])
+    capsys.readouterr()
+    assert sources.run("--redo", "grown.pdf", "bad.pdf") == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "bad.pdf: FAILED: pdftotext failed: stand-in: could not read the file",
+        "grown.pdf: redone as grown.pdf.txt.new: 2 pages, 0 read by OCR, 0 turned;"
+        " differs from grown.pdf.txt",
+        "1 redone, 1 failed",
+    ]
+
+
+def test_pillow_is_used_when_it_can_be_imported_and_done_without_when_it_cannot(monkeypatch):
+    import sys
+    import types
+
+    import booktools.sources_to_text as command
+
+    monkeypatch.undo()  # this test looks at the real function, not the fixture's stand-in
+    fake = types.ModuleType("PIL")
+    fake.Image = object()
+    monkeypatch.setitem(sys.modules, "PIL", fake)
+    assert command._pillow() is fake.Image
+    monkeypatch.setitem(sys.modules, "PIL", None)  # as if it were not installed
+    assert command._pillow() is None

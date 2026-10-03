@@ -296,3 +296,23 @@ def test_a_damaged_registry_is_refused():
     with pytest.raises(RegistryError) as caught:
         load_registry('{"registry": "book-tools notes", "version": 2, "next": 1, "notes": []}')
     assert str(caught.value) == "it was written by a later version of note-map (version 2)"
+
+
+def test_a_file_that_is_some_other_json_or_has_a_wrong_counter_is_not_a_registry():
+    from booktools.registry import RegistryError, load_registry
+
+    for text in (
+        '{"registry": "someone else’s file", "version": 1, "next": 1, "notes": []}',
+        '{"registry": "book-tools notes", "version": 1, "next": "7", "notes": []}',
+    ):
+        with pytest.raises(RegistryError) as caught:
+            load_registry(text)
+        assert str(caught.value) == "it is not a note registry written by note-map"
+
+
+def test_two_empty_texts_are_alike_and_an_empty_one_is_unlike_anything():
+    from booktools.text import likeness
+
+    assert likeness("", "") == 1.0
+    assert likeness("", "word") == 0.0
+    assert likeness("The same words.", "the same  words") == 1.0

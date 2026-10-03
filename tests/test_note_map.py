@@ -249,3 +249,25 @@ def test_a_document_with_no_notes_gives_an_empty_registry(tmp_path, capsys):
     assert book.run() == 0
     assert capsys.readouterr().out == "0 notes: 0 carried, 0 new, 0 retired\n"
     assert book.ids() == []
+
+
+def test_a_bare_number_is_enough_when_the_document_has_one_kind_of_note(tmp_path, capsys):
+    from tests.samples import W, note, separators
+
+    book = Book(tmp_path)
+    parts = sample_parts()
+    del parts["word/footnotes.xml"]
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        '<w:r><w:footnoteReference w:id="1"/></w:r>', ""
+    )
+    book.save(parts)
+    assert book.run() == 0
+    parts["word/endnotes.xml"] = (
+        f"<w:endnotes {W}>" + separators("endnote")
+        + note("endnote", 1, "Wholly rewritten, this one.") + note("endnote", 2, "Ibid.")
+        + "</w:endnotes>"
+    )
+    book.save(parts)
+    capsys.readouterr()
+    assert book.run("--assign", "N-0001=1") == 0
+    assert capsys.readouterr().out.splitlines()[0] == "2 notes: 2 carried, 0 new, 0 retired"

@@ -381,3 +381,18 @@ def test_an_interrupted_batch_keeps_its_results_and_exits_130(batch, capsys, mon
     ]
     assert [(r["index"], r["outcome"]) for r in records(batch)] == [(1, "filed")]
     assert sorted(p.name for p in batch.results.parent.iterdir() if "partial" in p.name) == []
+
+
+def test_a_backlog_that_does_not_answer_the_first_question_is_a_refusal(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, hang_on_help=True)
+    assert refused(batch, capsys, "--timeout", "2") == [
+        "file-tickets: backlog did not answer within 2 seconds"
+    ]
+
+
+def test_a_create_that_dies_without_a_word_is_reported_with_its_exit_code(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, create_dies_silently=True)
+    assert batch.run() == 1
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "-  FAILED  Ch. 3: the 2019 figure (backlog said: nothing, and exited 3)"
+    )

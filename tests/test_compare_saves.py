@@ -328,3 +328,14 @@ def test_a_git_that_does_not_answer_exits_1(saves, repository, capsys):
         "compare-saves: git did not answer within 2 seconds"
     ]
     assert list(saves.scratch.iterdir()) == []
+
+
+def test_a_commit_date_that_cannot_be_read_is_shown_as_git_gave_it(saves, repository, capsys):
+    saves.git.control(
+        files={"HEAD~1": str(repository.store / "old-version")},
+        log={"HEAD~1": "1a2b3c4d5e6f7a8b9c0d some day or other"},
+    )
+    assert saves.run("--git", "HEAD~1", str(repository.file), "--no-text-diff") == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        f"old: {repository.file} at HEAD~1 (commit 1a2b3c4, some day or other)"
+    )

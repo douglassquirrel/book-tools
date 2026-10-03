@@ -72,3 +72,14 @@ def test_a_turn_is_kept_only_when_it_reads_clearly_better():
     # A later turn must beat the best so far by the same rule, as the script's loop did.
     assert best_turn({0: 2, 90: 10, 180: 14, 270: 16}) == 270
     assert best_turn({0: 2, 90: 10, 180: 14, 270: 15}) == 90
+
+
+def test_which_pages_of_two_texts_of_a_pdf_differ():
+    from booktools.sources import pages_that_differ
+
+    old = assemble(["one", "two", "three"], [False, True, False], [0, 0, 0])
+    assert pages_that_differ(old, old) == []
+    assert pages_that_differ(old, assemble(["one", "TWO", "three"], [False, True, False], [0, 0, 0])) == [2]
+    # A page now read turned differs though its words are the same.
+    assert pages_that_differ(old, assemble(["one", "two", "three"], [False, True, False], [0, 90, 0])) == [2]
+    assert pages_that_differ(old, assemble(["one", "two"], [False, True], [0, 0])) is None
