@@ -3,25 +3,61 @@
 import argparse
 import os
 import shutil
+import sys
 import tempfile
 from datetime import datetime, timezone
 
 from booktools.clock import revision_dates
-from booktools.docx import Docx
-from booktools.editsfile import parse_edits
+from booktools.docx import Docx, DocxError
+from booktools.editsfile import EditsFileError, parse_edits
 from booktools.manuscript import Manuscript
 from booktools.plan import plan
 from booktools.propose import apply, highest_id, verify
 from booktools.report import edit_line
 
 
+class Refusal(Exception):
+    """The command will not start. `lines` say why, the first being the headline."""
+
+    def __init__(self, *lines):
+        super().__init__(lines[0])
+        self.lines = lines
+
+
 def main(argv=None, now=None):
     """Run the command; return its exit code. `now` gives the current time (for tests)."""
-    args = _parser().parse_args(argv)
-    now = now or (lambda: datetime.now(timezone.utc))
-    with open(args.edits, encoding="utf-8") as file:
-        edits = parse_edits(file.read())
-    docx = Docx(args.manuscript)
+    try:
+        args = _parser().parse_args(argv)
+    except SystemExit as stop:
+        return stop.code
+    try:
+        return _run(args, now or (lambda: datetime.now(timezone.utc)))
+    except Refusal as refusal:
+        print(f"propose-edits: {refusal.lines[0]}", file=sys.stderr)
+        for line in refusal.lines[1:]:
+            print(f"  {line}", file=sys.stderr)
+        return 2
+
+
+def _run(args, now):
+    try:
+        with open(args.edits, encoding="utf-8") as file:
+            edits = parse_edits(file.read())
+    except FileNotFoundError:
+        raise Refusal(f"{args.edits}: no such file") from None
+    except EditsFileError as error:
+        raise Refusal(f"{args.edits} cannot be used:", *error.problems) from None
+    try:
+        docx = Docx(args.manuscript)
+    except DocxError as error:
+        raise Refusal(str(error)) from None
+    if os.path.realpath(args.out) == os.path.realpath(args.manuscript):
+        raise Refusal(f"{args.out} is the manuscript itself; a copy must have another name")
+    folder = os.path.dirname(args.out) or "."
+    if not os.path.isdir(folder):
+        raise Refusal(f"the folder {folder} does not exist")
+    if os.path.exists(args.out) and not args.force:
+        raise Refusal(f"{args.out} already exists; give another name or add --force")
     parts = docx.texts()
     manuscript = Manuscript(parts)
     located = plan(edits, manuscript, highest_id(parts))
@@ -68,6 +104,9 @@ def _parser():
     parser.add_argument("--author", default="Claude", metavar="NAME")
     parser.add_argument(
         "--dry-run", action="store_true", help="show where each edit falls and write nothing"
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="write the copy even if a file of that name exists"
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser

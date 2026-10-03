@@ -98,3 +98,71 @@ def test_dry_run_prints_the_same_lines_and_writes_nothing(book, capsys):
     ]
     assert not book.out.exists()
     assert list(book.scratch.iterdir()) == []
+
+
+def refused(book, capsys, *flags):
+    """Run expecting a refusal to start: exit 2, nothing on stdout, nothing written."""
+    existed = book.out.exists()
+    assert book.run(*flags) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert book.out.exists() == existed
+    return captured.err.splitlines()
+
+
+def test_refuses_to_start_without_a_usable_edits_file(book, capsys):
+    book.edits.unlink()
+    assert refused(book, capsys) == [f"propose-edits: {book.edits}: no such file"]
+    book.edits.write_text('[{"find": "a", "replace": "a"}, {"fnd": "x"}]')
+    assert refused(book, capsys) == [
+        f"propose-edits: {book.edits} cannot be used:",
+        '  edit 1: "replace" is the same as "find", so the edit would change nothing',
+        '  edit 2: unknown key "fnd"',
+        '  edit 2: "find" must be text and not empty',
+        '  edit 2: "replace" must be text (empty to delete)',
+    ]
+
+
+def test_refuses_to_start_without_a_usable_manuscript(book, capsys):
+    book.manuscript.write_text("not a zip")
+    assert refused(book, capsys) == [
+        f"propose-edits: {book.manuscript}: not a .docx file (it is not a zip archive)"
+    ]
+
+
+def test_refuses_to_write_over_an_existing_file_without_force(book, capsys):
+    book.out.write_text("something already here")
+    assert refused(book, capsys) == [
+        f"propose-edits: {book.out} already exists; give another name or add --force"
+    ]
+    assert book.out.read_text() == "something already here"
+    assert refused(book, capsys, "--dry-run") == [
+        f"propose-edits: {book.out} already exists; give another name or add --force"
+    ]
+    assert book.run("--force") == 0
+    assert zipfile.is_zipfile(book.out)
+
+
+def test_never_writes_over_the_manuscript_even_with_force(book, capsys):
+    before = book.manuscript.read_bytes()
+    book.out = book.folder / "." / "in.docx"  # the same file by another spelling
+    assert refused(book, capsys, "--force") == [
+        f"propose-edits: {book.out} is the manuscript itself; a copy must have another name"
+    ]
+    assert book.manuscript.read_bytes() == before
+
+
+def test_refuses_when_the_folder_for_the_copy_does_not_exist(book, capsys):
+    book.out = book.out.parent / "missing" / "new.docx"
+    assert refused(book, capsys) == [
+        f"propose-edits: the folder {book.out.parent} does not exist"
+    ]
+
+
+def test_a_usage_error_exits_2_and_help_exits_0(book, capsys):
+    assert main(["--in", "x.docx"]) == 2
+    assert "usage: propose-edits" in capsys.readouterr().err
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("--in", "--out", "--author", "--dry-run", "--force", "--tmp"):
+        assert flag in out
