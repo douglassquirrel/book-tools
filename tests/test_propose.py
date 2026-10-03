@@ -183,3 +183,17 @@ def test_package_fails_when_an_edited_part_is_no_longer_well_formed():
     results = checked((ENDNOTES, "</w:endnote></w:endnotes>", "</w:endnotes>"))
     assert results[3][:2] == ("package", False)
     assert results[3][2].startswith("word/endnotes.xml is not well-formed XML: ")
+
+
+def test_new_ids_start_above_the_highest_id_anywhere_in_the_document():
+    from booktools.propose import highest_id
+
+    parts = {
+        BODY: '<w:document><w:bookmarkStart w:id="12" w:name="a"/><w:ins w:id="40" w:author="E"/>'
+        '<w:p w14:paraId="7FFFFFFF"/></w:document>',
+        ENDNOTES: '<w:endnotes><w:endnote w:type="separator" w:id="-1"/><w:endnote w:id="7"/></w:endnotes>',
+        "word/comments.xml": '<w:comments><w:comment w:id="55"/></w:comments>',
+        "word/styles.xml": "<w:styles/>",
+    }
+    assert highest_id(parts) == 55
+    assert highest_id({BODY: "<w:document/>"}) == 0

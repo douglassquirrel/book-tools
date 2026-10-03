@@ -232,3 +232,9 @@ def _ids(located):
 
 def _count(number, noun):
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
+
+
+def highest_id(parts):
+    """The highest w:id in any of `parts`; new revisions are numbered above it."""
+    found = [int(n) for xml in parts.values() for n in re.findall(r'\bw:id="(\d+)"', xml)]
+    return max(found, default=0)
