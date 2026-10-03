@@ -149,3 +149,29 @@ def test_a_note_that_does_not_exist_is_an_error():
     assert problems([edit(1, "the", "a", where=("footnote", 1))], Manuscript(TWO)) == [
         "edit 1: there is no footnote:1 (the document has no footnotes)"
     ]
+
+
+def test_an_edit_across_a_barrier_or_touching_an_existing_change_is_refused_by_name():
+    parts = body(
+        "<w:p><w:r><w:t>one</w:t><w:tab/><w:t>two</w:t></w:r>"
+        '<w:r><w:endnoteReference w:id="1"/></w:r><w:r><w:t> three</w:t></w:r></w:p>',
+        "<w:p><w:r><w:t>see </w:t></w:r>"
+        '<w:hyperlink r:id="rId1"><w:r><w:t>the site</w:t></w:r></w:hyperlink>'
+        '<w:ins w:id="4" w:author="Ed"><w:r><w:t> today</w:t></w:r></w:ins></w:p>',
+    )
+    edits = [
+        edit(1, "onetwo", "x"),
+        edit(2, "two three", "x"),
+        edit(3, "see the", "x"),
+        edit(4, "today", "x"),
+        edit(5, "the site", "our site"),
+        edit(6, "three", "3"),
+    ]
+    assert problems(edits, Manuscript(parts)) == [
+        'edit 1: the "find" text crosses a tab; make the edit on one side of it',
+        'edit 2: the "find" text crosses a note marker; make the edit on one side of it',
+        'edit 3: the "find" text crosses the start or end of a hyperlink;'
+        " make the edit on one side of it",
+        'edit 4: the "find" text touches an existing tracked insertion;'
+        " accept or reject that change in Word first",
+    ]

@@ -56,6 +56,15 @@ def plan(edits, manuscript, highest_id):
             problems.append(f"{edit.name}: {fault}")
             continue
         target, start, end = matches[(edit.occurrence or 1) - 1]
+        obstacle = read(target).obstacle(start, end)
+        if obstacle:
+            advice = (
+                "accept or reject that change in Word first"
+                if obstacle.startswith("touches")
+                else "make the edit on one side of it"
+            )
+            problems.append(f'{edit.name}: the "find" text {obstacle}; {advice}')
+            continue
         old = read(target).text[start:end]
         prefix, suffix = common_ends(old, edit.replace)
         new = edit.replace[prefix : len(edit.replace) - suffix]
