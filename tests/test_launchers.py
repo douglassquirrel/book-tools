@@ -13,6 +13,7 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
+LAUNCHERS = ("propose-edits", "file-tickets")
 
 
 @pytest.fixture
@@ -22,7 +23,7 @@ def kit(tmp_path):
     copy = tmp_path / "kit"
     copy.mkdir()
     shutil.copytree(KIT / "booktools", copy / "booktools", ignore=shutil.ignore_patterns("__pycache__"))
-    for launcher in ("propose-edits",):
+    for launcher in LAUNCHERS:
         shutil.copy2(KIT / launcher, copy / launcher)
     return copy
 
@@ -47,10 +48,26 @@ def test_propose_edits_runs_from_another_folder_and_leaves_no_bytecode_anywhere(
     assert list(kit.rglob("__pycache__")) == []
 
 
-def test_the_launcher_is_executable_and_asks_for_python3_on_the_path():
-    launcher = KIT / "propose-edits"
+@pytest.mark.parametrize("name", LAUNCHERS)
+def test_each_launcher_is_executable_and_asks_for_python3_on_the_path(name):
+    launcher = KIT / name
     assert os.access(launcher, os.X_OK)
     assert launcher.read_text().splitlines()[0] == "#!/usr/bin/env python3"
+
+
+def test_file_tickets_runs_from_another_folder_against_backlog_on_the_path(kit, tmp_path):
+    from tests.stubs import backlog_project, backlog_stub, only
+
+    project = backlog_project(tmp_path / "project")
+    stub = backlog_stub(tmp_path / "bin")
+    (tmp_path / "tickets.json").write_text('[{"title": "One"}]', encoding="utf-8")
+    done = subprocess.run(
+        [sys.executable, str(kit / "file-tickets"), "tickets.json", "--project", str(project)],
+        cwd=tmp_path, env={"PATH": only(stub)}, capture_output=True, text=True, timeout=60,
+    )
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.splitlines() == ["TASK-1  filed  One", "1 filed, 0 failed, 0 skipped"]
+    assert list(kit.rglob("__pycache__")) == []
 
 
 def test_help_names_every_flag_in_the_synopsis(kit, tmp_path):
