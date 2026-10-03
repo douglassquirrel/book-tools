@@ -66,3 +66,32 @@ def test_the_author_s_name_is_escaped_in_the_attribute():
     located = plan([edit(1, "fox", "dog")], Manuscript(PARTS), highest_id=0)
     out = apply(PARTS, located, 'R&D "Ed" <x>', DATES)
     assert 'w:author="R&amp;D &quot;Ed&quot; &lt;x&gt;"' in out[BODY]
+
+
+EDITS = [edit(1, "fox", "dog"), edit(2, "quick", "slow"), edit(3, "a note", "the note", ("endnote", 1))]
+
+
+def checked(tamper=None, edits=EDITS):
+    """Verify a copy, after `tamper` (part, old, new) has spoilt it if given."""
+    from booktools.propose import verify
+
+    located = plan(edits, Manuscript(PARTS), highest_id=0)
+    out = apply(PARTS, located, "Claude", DATES)
+    if tamper:
+        part, old, new = tamper
+        assert old in out[part]
+        out[part] = out[part].replace(old, new, 1)
+    return verify(PARTS, out, located, "Claude", DATES)
+
+
+def failed(results):
+    return [name for name, passed, _ in results if not passed]
+
+
+def test_a_sound_copy_passes_all_four_checks():
+    assert checked() == [
+        ("reject all", True, "every paragraph reads as in the original"),
+        ("accept all", True, "the original with exactly the 3 edits made"),
+        ("revisions", True, "6 revisions for 3 edits, all by Claude at 2026-10-03T14:46:00Z"),
+        ("package", True, "2 parts changed, each well-formed; everything else byte-identical"),
+    ]

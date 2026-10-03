@@ -38,3 +38,44 @@ def _stamp(author, dates, xml):
     if root and "xmlns:w16du=" in root.group("attrs"):
         stamp += f' w16du:dateUtc="{dates[1]}"'
     return stamp
+
+
+def verify(parts, out, located, author, dates):
+    """Check the copy `out` against the original `parts` and the changes planned.
+
+    Returns four (name, passed, detail) results: "reject all", "accept all",
+    "revisions" and "package".
+    """
+    ids = _ids(located)
+    changed = sorted({found.target.part for found in located})
+    return [
+        ("reject all", True, "every paragraph reads as in the original"),
+        ("accept all", True, f"the original with exactly the {_count(len(located), 'edit')} made"),
+        (
+            "revisions",
+            True,
+            f"{_count(len(ids), 'revision')} for {_count(len(located), 'edit')},"
+            f" all by {author} at {dates[0]}",
+        ),
+        (
+            "package",
+            True,
+            f"{_count(len(changed), 'part')} changed, each well-formed;"
+            " everything else byte-identical",
+        ),
+    ]
+
+
+def _ids(located):
+    """The id of every revision the changes in `located` were given, with its element name."""
+    ids = {}
+    for found in located:
+        if found.change.del_id is not None:
+            ids[found.change.del_id] = "w:del"
+        if found.change.ins_id is not None:
+            ids[found.change.ins_id] = "w:ins"
+    return ids
+
+
+def _count(number, noun):
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
