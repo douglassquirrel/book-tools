@@ -198,3 +198,24 @@ def test_text_that_runs_from_one_paragraph_into_the_next_is_named_as_such():
             'edit 1: "find" text runs from paragraph 1 into paragraph 2 of the body;'
             " an edit must stay within one paragraph (join or split paragraphs by hand in Word)"
         ]
+
+
+LINK = body(
+    "<w:p><w:r><w:t>see </w:t></w:r>"
+    '<w:hyperlink r:id="rId1"><w:r><w:t>the site</w:t></w:r></w:hyperlink>'
+    "<w:r><w:t> now</w:t></w:r></w:p>"
+)
+
+
+def change_of(find, replace, parts=LINK):
+    (l,) = plan([edit(1, find, replace)], Manuscript(parts), highest_id=0)
+    return (l.change.start, l.change.end, l.change.new, l.change.after)
+
+
+def test_a_pure_insertion_is_attached_to_a_character_of_the_text_the_edit_named():
+    # Added after words the edit named: attached to the character before it.
+    assert change_of("the site", "the site map") == (12, 12, " map", True)
+    # Added before everything the edit named: attached to the character after it,
+    # so that it stays outside the hyperlink that ends just before.
+    assert change_of(" now", ", now") == (12, 12, ",", False)
+    assert change_of("see", "do see") == (0, 0, "do ", False)
