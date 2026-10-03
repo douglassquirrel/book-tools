@@ -5,9 +5,9 @@ Word, with an AI assistant doing the checking and record-keeping and
 [Backlog.md](https://github.com/MrLesk/Backlog.md) as the issue tracker. It is not tied to any
 one book or publisher.
 
-**Status: two commands of six work.** `propose-edits` and `file-tickets` are built and
-tested; the other four are not written yet. This README will be replaced by full
-instructions when all six exist.
+**Status: three commands of six work.** `propose-edits`, `file-tickets` and `note-map` are
+built and tested; the other three are not written yet. This README will be replaced by
+full instructions when all six exist.
 
 ## Using `propose-edits` now
 
@@ -102,6 +102,31 @@ With `--results`, each ticket's id and outcome is recorded as the batch goes; ru
 same command again finishes an interrupted batch without filing anything twice.
 `--skip-existing` skips a ticket whose exact title is already in the project.
 `./file-tickets --help` lists the other flags.
+
+## Using `note-map` now
+
+    ./note-map MANUSCRIPT.docx --registry notes.json --map note-map.md
+
+The first run gives every endnote and footnote a permanent ID (`N-0001`, `N-0002`, …) and
+records them in the registry file. Run it again after each save: a note keeps its ID
+however Word has renumbered it, a new note gets the next ID, and a deleted note's ID is
+retired and never used again. Name notes by their IDs in your records; the map says what
+number each has today:
+
+```
+| ID | Label | Note | Number in the book | Under |
+|---|---|---|---|---|
+| N-0004 | A note added in the later save. | endnote:1 | 1 | Chapter 1 |
+| N-0001 | Recorded by Trinity House in the station | endnote:2 | 2 | Chapter 1 |
+| N-0002 | Ibid. | endnote:3 | 3 | Chapter 2 |
+| N-0003 | Imperial pints. | footnote:1 | 1 | Chapter 1 |
+```
+
+A note is recognised by its text together with the sentence its marker sits in. If a note
+was both rewritten and moved, the command does not guess: it lists the note with its
+candidates, writes nothing, exits 1, and prints the `--assign` to add for each possibility
+(`--assign N-0001=endnote:1`, or `--assign new=endnote:1`). The manuscript is only read.
+Keep the registry where your records are kept; the map is made afresh at every run.
 
 ## What it will do
 
