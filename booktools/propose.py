@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from xml.etree import ElementTree
 
 from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
 from booktools.paragraph import Paragraph
@@ -54,17 +55,11 @@ def verify(parts, out, located, author, dates):
     "revisions" and "package".
     """
     ids = _ids(located)
-    changed = sorted({found.target.part for found in located})
     return [
         _reject_all(parts, out, ids),
         _accept_all(parts, out, located, ids),
         _revisions(parts, out, located, ids, author, dates),
-        (
-            "package",
-            True,
-            f"{_count(len(changed), 'part')} changed, each well-formed;"
-            " everything else byte-identical",
-        ),
+        _package(parts, out, located),
     ]
 
 
@@ -147,6 +142,48 @@ def _tracked(xml):
         for tag in TAG.finditer(xml)
         if tag.group("name") in names and not tag.group("close") and not tag.group("empty")
     ]
+
+
+def _package(parts, out, located):
+    """Nothing but the edited paragraphs may differ by a single byte, and each
+    edited part must still be well-formed XML."""
+    edited = {(found.target.part, found.target.number) for found in located}
+    changed = sorted({part for part, _ in edited})
+    for part in parts:
+        if part not in changed:
+            if out.get(part) != parts[part]:
+                return ("package", False, f"{part} has changed and no edit is in it")
+            continue
+        try:
+            ElementTree.fromstring(out[part].encode("utf-8"))
+        except ElementTree.ParseError as error:
+            return ("package", False, f"{part} is not well-formed XML: {error}")
+        fault = _strayed(part, parts[part], out[part], edited)
+        if fault:
+            return ("package", False, fault)
+    detail = f"{_count(len(changed), 'part')} changed, each well-formed"
+    return ("package", True, detail + "; everything else byte-identical")
+
+
+def _strayed(part, old, new, edited):
+    """A sentence naming the first byte-level change outside the edited paragraphs."""
+
+    def outer(xml):
+        spans = enumerate(paragraph_spans(xml), 1)
+        return [(number, start, end) for number, (start, end, depth) in spans if depth == 1]
+
+    was, now = outer(old), outer(new)
+    outside = f"{part} has changed outside its paragraphs"
+    if len(was) != len(now):
+        return outside
+    old_at = new_at = 0
+    for (number, old_start, old_end), (_, new_start, new_end) in zip(was, now):
+        if old[old_at:old_start] != new[new_at:new_start]:
+            return outside
+        if (part, number) not in edited and old[old_start:old_end] != new[new_start:new_end]:
+            return f"paragraph {number} of {part} was not edited but its XML has changed"
+        old_at, new_at = old_end, new_end
+    return outside if old[old_at:] != new[new_at:] else None
 
 
 def _texts(xml):

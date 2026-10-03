@@ -17,13 +17,15 @@ def p(text):
     return f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"
 
 
-HEAD = f'<?xml version="1.0"?>\r\n<w:document {W16DU}><w:body>'
+W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+HEAD = f'<?xml version="1.0"?>\r\n<w:document {W} {W16DU}><w:body>'
+NOTES = f"<w:endnotes {W}>"
 UNTOUCHED = p("untouched &amp; unchanged") + '<w:p><w:r><w:endnoteReference w:id="1"/></w:r></w:p>'
 TAIL = "<w:sectPr/></w:body></w:document>"
 PARTS = {
     BODY: HEAD + p("the quick brown fox") + UNTOUCHED + TAIL,
-    ENDNOTES: '<w:endnotes><w:endnote w:id="1">' + p("a note") + "</w:endnote></w:endnotes>",
-    "word/styles.xml": "<w:styles/>",
+    ENDNOTES: NOTES + '<w:endnote w:id="1">' + p("a note") + "</w:endnote></w:endnotes>",
+    "word/styles.xml": f"<w:styles {W}/>",
 }
 
 
@@ -53,12 +55,12 @@ def test_makes_every_change_and_leaves_all_else_byte_for_byte():
     )
     # The endnotes part does not declare w16du, so the UTC attribute is left out there.
     assert out[ENDNOTES] == (
-        '<w:endnotes><w:endnote w:id="1"><w:p>'
+        NOTES + '<w:endnote w:id="1"><w:p>'
         f'<w:del w:id="5"{LOCAL}><w:r><w:delText>a</w:delText></w:r></w:del>'
         f'<w:ins w:id="6"{LOCAL}><w:r><w:t>the</w:t></w:r></w:ins>'
         '<w:r><w:t xml:space="preserve"> note</w:t></w:r></w:p></w:endnote></w:endnotes>'
     )
-    assert out["word/styles.xml"] == "<w:styles/>"
+    assert out["word/styles.xml"] == f"<w:styles {W}/>"
     assert PARTS[BODY] == HEAD + p("the quick brown fox") + UNTOUCHED + TAIL  # input not altered
 
 
@@ -160,3 +162,24 @@ def test_revisions_fails_when_an_edit_does_not_have_exactly_its_own_pair():
     twice = f'<w:ins w:id="2"{BOTH}><w:r><w:t>slow</w:t></w:r></w:ins>'
     doubled = checked((BODY, twice, twice + twice))
     assert doubled[2] == ("revisions", False, "revision 2 appears 2 times in the copy")
+
+
+def test_package_fails_when_an_untouched_paragraph_or_part_is_not_byte_identical():
+    # The text is the same, so the first two checks pass; only the bytes differ.
+    results = checked((BODY, "<w:p><w:r><w:t>untouched", '<w:p w:rsidR="00FF"><w:r><w:t>untouched'))
+    assert failed(results) == ["package"]
+    assert results[3][2] == "paragraph 2 of word/document.xml was not edited but its XML has changed"
+    results = checked((BODY, "<w:sectPr/>", "<w:sectPr></w:sectPr>"))
+    assert results[3] == (
+        "package",
+        False,
+        "word/document.xml has changed outside its paragraphs",
+    )
+    results = checked(("word/styles.xml", "/>", "></w:styles>"))
+    assert results[3] == ("package", False, "word/styles.xml has changed and no edit is in it")
+
+
+def test_package_fails_when_an_edited_part_is_no_longer_well_formed():
+    results = checked((ENDNOTES, "</w:endnote></w:endnotes>", "</w:endnotes>"))
+    assert results[3][:2] == ("package", False)
+    assert results[3][2].startswith("word/endnotes.xml is not well-formed XML: ")
