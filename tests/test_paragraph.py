@@ -140,3 +140,20 @@ def test_finds_every_occurrence_including_at_the_very_start_and_end():
 def test_finds_nothing_when_the_phrase_is_absent_or_empty():
     assert find(para("abc"), "abd") == []
     assert find(para("abc"), "") == []
+
+
+def test_matches_composed_and_decomposed_forms_of_the_same_text():
+    nfc, nfd = "café au lait", "café au lait"
+    # Offsets are into the paragraph's own text, whichever form it is stored in.
+    assert find(para("un ", nfd), "café au") == [(3, 11)]
+    assert find(para("un ", nfc), "café au") == [(3, 10)]
+    assert find(para("un ", nfd), "café") == [(3, 8)]
+
+
+def test_does_not_match_a_letter_apart_from_its_accent():
+    assert find(para("café"), "cafe") == []
+    assert find(para("café"), "cafe") == []
+
+
+def test_matches_decomposed_hangul_against_composed():
+    assert find(para("한글"), "한") == [(0, 3)]
