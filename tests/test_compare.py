@@ -192,3 +192,22 @@ def test_a_very_large_gap_is_paired_side_by_side(monkeypatch):
     assert pair([A, B], [B_EDITED, X]) == [(0, None), (1, 0), (None, 1)]
     monkeypatch.setattr(compare, "LARGEST_GAP", 1)
     assert pair([A, B], [B_EDITED, X]) == [(0, None), (1, None), (None, 0), (None, 1)]
+
+
+def test_a_small_change_in_a_long_paragraph_is_one_short_span():
+    # Python's matcher, left to itself, sets aside the commonest letters of a long text
+    # and then reports a small change as several spans of unrelated text.
+    old = (
+        "The lamp was lit at dusk, and the keeper is not one to waste oil. She wrote every"
+        " figure in a large ledger, and the log for March is missing. No ship put out that"
+        " week, for the tide tables were wrong and the harbour master would not sign. A"
+        " paragraph of this length is ordinary in a book, and a careful author changes a"
+        " word or two in it between one save and the next without a second thought."
+    )
+    assert len(old) > 200
+    cut = old.index("careful ")
+    new = old[:cut] + old[cut + len("careful ") :]
+    assert lines(para(old), para(new)) == (
+        [f"TEXT 7: delete {old[cut - 25 : cut + 8 + 25]!r} -> {new[cut - 25 : cut + 25]!r}"],
+        1,
+    )

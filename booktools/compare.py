@@ -86,7 +86,9 @@ def differences(label, old, new, ignore_fonts=()):
         )
     if old_text != new_text:
         count += 1
-        matcher = difflib.SequenceMatcher(None, old_text, new_text)
+        # Every letter is weighed: the matcher's habit of setting aside the commonest
+        # ones in a long text made a small change look like several unrelated ones.
+        matcher = difflib.SequenceMatcher(None, old_text, new_text, autojunk=False)
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag != "equal":
                 before = old_text[max(0, i1 - 25) : i2 + 25]
