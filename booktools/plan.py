@@ -1,5 +1,7 @@
 """Places each edit in the manuscript before anything is written."""
 
+import unicodedata
+
 from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
 from booktools.paragraph import Paragraph
 from booktools.revise import Change
@@ -51,7 +53,7 @@ def plan(edits, manuscript, highest_id):
         matches = [
             (target, start, end) for target in space for start, end in read(target).find(edit.find)
         ]
-        fault = _unusable(edit, matches, where)
+        fault = _unusable(edit, matches, where) if matches else _missing(edit, space, where, read)
         if fault:
             problems.append(f"{edit.name}: {fault}")
             continue
@@ -131,10 +133,26 @@ def _space(edit, manuscript):
     return notes[kind][number - 1], f"{kind}:{number}"
 
 
+def _missing(edit, space, where, read):
+    """Why nothing matched: the text runs across two paragraphs, or is not there."""
+    nfc = unicodedata.normalize
+    wanted = nfc("NFC", edit.find)
+    for first, second in zip(space, space[1:]):
+        if first.part != second.part:
+            continue
+        for gap in ("", " "):
+            if wanted in nfc("NFC", read(first).text + gap + read(second).text):
+                place = "the body" if first.place == "body" else first.place
+                return (
+                    f'"find" text runs from paragraph {first.number} into paragraph'
+                    f" {second.number} of {place}; an edit must stay within one paragraph"
+                    " (join or split paragraphs by hand in Word)"
+                )
+    return f'"find" text not found in {where}'
+
+
 def _unusable(edit, matches, where):
     """Why the matches found for `edit` do not single out one place, or None."""
-    if not matches:
-        return f'"find" text not found in {where}'
     count = "once" if len(matches) == 1 else f"{len(matches)} times"
     if edit.occurrence is None and len(matches) > 1:
         numbers = [str(target.number) for target, _, _ in matches]

@@ -189,3 +189,12 @@ def test_edits_that_meet_end_to_start_do_not_overlap():
     m = Manuscript(body(p("the quick brown fox")))
     located = plan([edit(1, "quick ", "x "), edit(2, "brown", "y")], m, highest_id=0)
     assert [(l.start, l.end) for l in located] == [(4, 10), (10, 15)]
+
+
+def test_text_that_runs_from_one_paragraph_into_the_next_is_named_as_such():
+    m = Manuscript(body(p("It ends here."), p("And starts again."), p("Third.")))
+    for find in ("here. And starts", "here.And starts"):
+        assert problems([edit(1, find, "x")], m) == [
+            'edit 1: "find" text runs from paragraph 1 into paragraph 2 of the body;'
+            " an edit must stay within one paragraph (join or split paragraphs by hand in Word)"
+        ]
