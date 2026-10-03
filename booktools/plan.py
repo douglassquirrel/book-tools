@@ -42,18 +42,24 @@ def plan(edits, manuscript, highest_id):
         return paragraphs[key]
 
     located = []
+    problems = []
     for edit in edits:
+        space, where = manuscript.body, "the body"
         matches = [
-            (target, start, end)
-            for target in manuscript.body
-            for start, end in read(target).find(edit.find)
+            (target, start, end) for target in space for start, end in read(target).find(edit.find)
         ]
-        target, start, end = matches[0]
+        fault = _unusable(edit, matches, where)
+        if fault:
+            problems.append(f"{edit.name}: {fault}")
+            continue
+        target, start, end = matches[(edit.occurrence or 1) - 1]
         old = read(target).text[start:end]
         prefix, suffix = common_ends(old, edit.replace)
         new = edit.replace[prefix : len(edit.replace) - suffix]
         change = Change(start + prefix, end - suffix, new, after=prefix > 0)
         located.append(Located(edit, target, start, end, change))
+    if problems:
+        raise PlanError(problems)
     located.sort(key=lambda found: (ORDER[found.target.part], found.target.start, found.start))
     for found in located:
         change = found.change
@@ -64,3 +70,20 @@ def plan(edits, manuscript, highest_id):
             highest_id += 1
             change.ins_id = highest_id
     return located
+
+
+def _unusable(edit, matches, where):
+    """Why the matches found for `edit` do not single out one place, or None."""
+    if not matches:
+        return f'"find" text not found in {where}'
+    count = "once" if len(matches) == 1 else f"{len(matches)} times"
+    if edit.occurrence is None and len(matches) > 1:
+        numbers = [str(target.number) for target, _, _ in matches]
+        listed = ", ".join(numbers[:-1]) + " and " + numbers[-1]
+        return (
+            f'"find" text occurs {count} in {where} (paragraphs {listed});'
+            ' add "occurrence" to say which'
+        )
+    if edit.occurrence is not None and edit.occurrence > len(matches):
+        return f'"occurrence" is {edit.occurrence} but the "find" text occurs {count} in {where}'
+    return None
