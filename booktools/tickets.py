@@ -178,3 +178,41 @@ def mismatches(ticket, viewed):
         if (got.get("author") or None) != author:
             found.append(f"the author of comment {number} came back different")
     return found
+
+
+class ResultsError(Exception):
+    """The results file cannot be used with this tickets file."""
+
+
+def dump_results(records):
+    """The text of a results file: one record per ticket dealt with so far."""
+    return json.dumps(records, indent=2, ensure_ascii=False) + "\n"
+
+
+def load_results(text, tickets):
+    """Return {index: record} from a results file's text, for resuming `tickets`.
+
+    Raises ResultsError if the text is not a results file, or if a record's title is
+    not the title of the ticket at that index: it belongs to another tickets file.
+    """
+    try:
+        records = json.loads(text)
+        if not isinstance(records, list):
+            raise TypeError
+        found = {record["index"]: record for record in records}
+        for record in records:
+            record["title"], record["id"], record["outcome"]
+    except (ValueError, TypeError, KeyError):
+        raise ResultsError("it is not a results file written by file-tickets") from None
+    for index, record in found.items():
+        if not isinstance(index, int) or not 1 <= index <= len(tickets):
+            raise ResultsError(
+                f"it has a record for ticket {index} but the tickets file holds {len(tickets)}"
+            )
+        title = tickets[index - 1].title
+        if record["title"] != title:
+            raise ResultsError(
+                f'the record for ticket {index} is titled "{record["title"]}"'
+                f' but that ticket is titled "{title}"'
+            )
+    return found

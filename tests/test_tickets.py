@@ -203,3 +203,36 @@ def test_each_thing_that_came_back_different_is_named():
     assert differing(comments=swapped) == ["the author of comment 1 came back different"]
     altered = [viewed()["comments"][0], dict(viewed()["comments"][1], body="No author")]
     assert differing(comments=altered) == ["comment 2 came back different"]
+
+
+def test_the_results_file_round_trips():
+    from booktools.tickets import dump_results, load_results
+
+    tickets = parse_tickets('[{"title": "One"}, {"title": "Twö \\"q\\""}, {"title": "Three"}]')
+    records = [
+        {"index": 1, "title": "One", "id": "TASK-1", "outcome": "filed"},
+        {"index": 2, "title": 'Twö "q"', "id": None, "outcome": "failed: create failed"},
+    ]
+    text = dump_results(records)
+    assert text.endswith("\n") and "Twö" in text  # readable, not escaped
+    assert load_results(text, tickets) == {1: records[0], 2: records[1]}
+    assert load_results("[]", tickets) == {}
+
+
+def test_a_results_file_from_another_batch_is_refused():
+    from booktools.tickets import ResultsError, load_results
+
+    tickets = parse_tickets('[{"title": "One"}, {"title": "Two"}]')
+    cases = {
+        '[{"index": 2, "title": "Deux", "id": "TASK-9", "outcome": "filed"}]':
+            'the record for ticket 2 is titled "Deux" but that ticket is titled "Two"',
+        '[{"index": 3, "title": "Three", "id": "TASK-9", "outcome": "filed"}]':
+            "it has a record for ticket 3 but the tickets file holds 2",
+        "{}": "it is not a results file written by file-tickets",
+        "not json": "it is not a results file written by file-tickets",
+        '[{"index": 1}]': "it is not a results file written by file-tickets",
+    }
+    for text, message in cases.items():
+        with pytest.raises(ResultsError) as caught:
+            load_results(text, tickets)
+        assert str(caught.value) == message
