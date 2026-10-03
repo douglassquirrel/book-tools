@@ -37,3 +37,7 @@ writes a new one.
 
 Development is test-first: every piece of behaviour starts as a failing test. The tests use
 only small invented documents; no real manuscript, source or ticket is ever committed here.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
