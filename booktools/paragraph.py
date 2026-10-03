@@ -10,6 +10,24 @@ from booktools.xmlscan import parse
 UNIT = re.compile(r"&[^;]+;|.", re.S)
 
 
+# What a child of a run is called when an edit is refused for crossing it.
+# Children not listed here or in TRANSPARENT are named by their tag.
+IN_RUN = {
+    "w:tab": "a tab",
+    "w:ptab": "a tab",
+    "w:br": "a line break",
+    "w:cr": "a line break",
+    "w:endnoteReference": "a note marker",
+    "w:footnoteReference": "a note marker",
+    "w:drawing": "a drawing",
+    "w:pict": "a drawing",
+    "w:object": "a drawing",
+    "mc:AlternateContent": "a drawing",
+}
+# Children of a run that an edit may pass over: they hold no content.
+TRANSPARENT = {"w:rPr", "w:lastRenderedPageBreak"}
+
+
 class Piece:
     """The text of one <w:t>: which run it is in and where it starts in the paragraph."""
 
@@ -24,6 +42,7 @@ class Paragraph:
     def __init__(self, xml):
         self.xml = xml
         self.pieces = []
+        self.barriers = []  # (offset in the text, what stands there)
         self._length = 0
         self._walk(parse(xml))
         self.text = "".join(html.unescape(u) for p in self.pieces for u in p.units)
@@ -39,3 +58,5 @@ class Paragraph:
                 units = UNIT.findall(self.xml[child.open_end : child.close_start])
                 self.pieces.append(Piece(run, child, self._length, units))
                 self._length += len(units)
+            elif child.name in IN_RUN:
+                self.barriers.append((self._length, IN_RUN[child.name]))
