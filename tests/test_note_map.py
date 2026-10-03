@@ -108,3 +108,75 @@ def test_the_manuscript_is_only_read_and_nothing_else_appears_beside_it_or_the_r
     assert book.manuscript.read_bytes() == before
     assert [path.name for path in book.folder.iterdir()] == ["Book.docx"]
     assert [path.name for path in book.records.iterdir()] == ["notes.json"]  # no .prev, no partial
+
+
+def moved_and_rewritten():
+    """A save in which the first endnote was reworded and its sentence recast."""
+    parts = sample_parts()
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        "The lamp was lit at dusk, and the kee", "At dusk the lamp was always lit; the kee"
+    )
+    parts["word/endnotes.xml"] = parts["word/endnotes.xml"].replace(
+        "Recorded by Trinity House in the station log.",
+        "The station log, as recorded by Trinity House.",
+    )
+    return parts
+
+
+def test_an_unclear_note_is_listed_with_its_candidates_and_nothing_is_written(book, capsys):
+    book.run()
+    before = book.registry.read_bytes()
+    capsys.readouterr()
+    book.save(moved_and_rewritten())
+    assert book.run("--map", str(book.map)) == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        'unclear: endnote:1 "The station log, as recorded by Trinity " in the sentence'
+        ' "At dusk the lamp was always lit; the keeper isn’t one to waste oil."',
+        '  if it is N-0001 "Recorded by Trinity House in the station": --assign N-0001=endnote:1',
+        "  if it is a new note: --assign new=endnote:1",
+    ]
+    assert captured.err.splitlines() == [
+        "note-map: 1 note is unclear and was not guessed; nothing written."
+        " Run again with --assign for each"
+    ]
+    assert book.registry.read_bytes() == before
+    assert not book.map.exists()
+
+
+def test_assign_settles_it_either_way(book, capsys):
+    book.run()
+    book.save(moved_and_rewritten())
+    assert book.run("--assign", "N-0001=endnote:1") == 0
+    assert capsys.readouterr().out.splitlines()[-4] == "3 notes: 3 carried, 0 new, 0 retired"
+    assert book.ids()[0] == ("N-0001", "endnote", "The station lo", False)
+
+    book.save(sample_parts())  # back to the old wording: unclear again
+    assert book.run() == 1
+    capsys.readouterr()
+    assert book.run("--assign", "new=1") == 2  # a bare number is refused: two kinds of note
+    assert capsys.readouterr().err.splitlines() == [
+        "note-map: --assign new=1: say endnote:1 or footnote:1, since this document has both"
+    ]
+    assert book.run("--assign", "new=endnote:1") == 0
+    assert capsys.readouterr().out.splitlines()[:3] == [
+        "3 notes: 2 carried, 1 new, 1 retired",
+        "new: N-0004 endnote:1 Recorded by Trinity House in the station",
+        "retired: N-0001 The station log, as recorded by Trinity ",
+    ]
+
+
+def test_an_assignment_that_makes_no_sense_is_a_refusal(book, capsys):
+    book.run()
+    capsys.readouterr()
+    for flag, message in (
+        ("N-0009=endnote:1", "--assign N-0009=endnote:1: N-0009 is not a live ID in the registry"),
+        ("N-0001=endnote:7", "--assign N-0001=endnote:7: there is no endnote:7 in this save"
+                             " (it has 2 endnotes)"),
+        ("N-0001", "--assign N-0001: must be ID=NUMBER or new=NUMBER,"
+                   " NUMBER being endnote:N or footnote:N"),
+        ("N-0001=endnote:x", "--assign N-0001=endnote:x: must be ID=NUMBER or new=NUMBER,"
+                             " NUMBER being endnote:N or footnote:N"),
+    ):
+        assert book.run("--assign", flag) == 2
+        assert capsys.readouterr().err.splitlines() == [f"note-map: {message}"]
