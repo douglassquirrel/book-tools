@@ -1,8 +1,14 @@
 """Makes the planned changes in the parts of a document and proves the result."""
 
+import unicodedata
+
+from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
 from booktools.paragraph import Paragraph
 from booktools.revise import revise
-from booktools.xmlscan import TAG
+from booktools.settle import accept, reject
+from booktools.xmlscan import TAG, paragraph_spans
+
+TEXT_PARTS = (BODY, ENDNOTES, FOOTNOTES)
 
 
 def apply(parts, located, author, dates):
@@ -49,7 +55,7 @@ def verify(parts, out, located, author, dates):
     ids = _ids(located)
     changed = sorted({found.target.part for found in located})
     return [
-        ("reject all", True, "every paragraph reads as in the original"),
+        _reject_all(parts, out, ids),
         ("accept all", True, f"the original with exactly the {_count(len(located), 'edit')} made"),
         (
             "revisions",
@@ -64,6 +70,51 @@ def verify(parts, out, located, author, dates):
             " everything else byte-identical",
         ),
     ]
+
+
+def _reject_all(parts, out, ids):
+    """With this run's revisions rejected, every paragraph must read as it did."""
+    for part in TEXT_PARTS:
+        if part in parts:
+            fault = _difference(
+                part, _texts(reject(out[part], ids)), _texts(parts[part]), "the original reads"
+            )
+            if fault:
+                return ("reject all", False, fault)
+    return ("reject all", True, "every paragraph reads as in the original")
+
+
+def _texts(xml):
+    """The text of every paragraph of a part, in NFC."""
+    return [
+        unicodedata.normalize("NFC", Paragraph(xml[start:end]).text)
+        for start, end, _ in paragraph_spans(xml)
+    ]
+
+
+def _difference(part, got, want, label):
+    """A sentence naming the first paragraph where `got` is not `want`, or None."""
+    if len(got) != len(want):
+        return f"{part} has {len(got)} paragraphs where {len(want)} were expected"
+    for number, (mine, theirs) in enumerate(zip(got, want), 1):
+        if mine != theirs:
+            at = next(
+                (i for i, (a, b) in enumerate(zip(mine, theirs)) if a != b),
+                min(len(mine), len(theirs)),
+            )
+            return (
+                f"paragraph {number} of {part} reads {_around(mine, at)}"
+                f" but {label} {_around(theirs, at)}"
+            )
+    return None
+
+
+def _around(text, at):
+    """`text` in quotes, cut down to the neighbourhood of offset `at` when long."""
+    if len(text) <= 60:
+        return f"'{text}'"
+    start = max(0, at - 25)
+    return "'" + ("…" if start else "") + text[start : at + 35] + ("…" if at + 35 < len(text) else "") + "'"
 
 
 def _ids(located):

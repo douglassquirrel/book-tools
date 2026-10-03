@@ -95,3 +95,20 @@ def test_a_sound_copy_passes_all_four_checks():
         ("revisions", True, "6 revisions for 3 edits, all by Claude at 2026-10-03T14:46:00Z"),
         ("package", True, "2 parts changed, each well-formed; everything else byte-identical"),
     ]
+
+
+def test_reject_all_fails_when_text_outside_the_revisions_was_altered():
+    results = checked((BODY, "untouched &amp; unchanged", "untouched &amp; changed"))
+    assert "reject all" in failed(results)
+    assert results[0] == (
+        "reject all",
+        False,
+        "paragraph 2 of word/document.xml reads 'untouched & changed'"
+        " but the original reads 'untouched & unchanged'",
+    )
+
+
+def test_reject_all_fails_when_a_deleted_word_is_not_the_original_word():
+    results = checked((BODY, "<w:delText>quick</w:delText>", "<w:delText>quack</w:delText>"))
+    assert results[0][:2] == ("reject all", False)
+    assert results[1][:2] == ("accept all", True)
