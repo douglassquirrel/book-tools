@@ -225,3 +225,69 @@ def test_a_usage_error_exits_2_and_help_exits_0(saves, capsys):
     out = capsys.readouterr().out
     for flag in ("--git", "--ignore-font", "--no-text-diff", "--no-counts", "--utc", "--tmp", "--timeout"):
         assert flag in out
+
+
+class Repository:
+    """The sample book as if kept in git: the stand-in git serves the old save for
+    HEAD~1 and v1, and the new save is the file on disk."""
+
+    def __init__(self, saves, tmp_path):
+        self.saves = saves
+        self.file = saves.folder / "Book.docx"
+        self.file.write_bytes(saves.new.read_bytes())
+        self.store = tmp_path / "git-store"
+        self.store.mkdir()
+        committed = self.store / "old-version"
+        committed.write_bytes(saves.old.read_bytes())
+        newer = self.store / "new-version"
+        newer.write_bytes(saves.new.read_bytes())
+        saves.git.control(
+            files={"HEAD~1": str(committed), "v1": str(committed), "HEAD": str(newer)},
+            log={
+                "HEAD~1": "1a2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d 2026-10-01T10:05:00+01:00",
+                "v1": "1a2b3c4d5e6f7a8b9c0d1a2b3c4d5e6f7a8b9c0d 2026-10-01T10:05:00+01:00",
+                "HEAD": "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432 2026-10-02T17:35:00Z",
+            },
+        )
+
+
+@pytest.fixture
+def repository(saves, tmp_path):
+    return Repository(saves, tmp_path)
+
+
+def test_git_with_one_revision_compares_it_with_the_file_on_disk(saves, repository, capsys):
+    assert saves.run("--git", "HEAD~1", str(repository.file)) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:3] == [
+        f"old: {repository.file} at HEAD~1 (commit 1a2b3c4, 2026-10-01 10:05)",
+        f"new: {repository.file} as it is on disk",
+        "",
+    ]
+    assert out[3:21] == structure(saves)
+    assert out[22:38] == PARAGRAPHS
+    assert out[39:] == WORDS
+    folder = str(saves.folder)
+    assert saves.git.calls() == [
+        ["-C", folder, "show", "HEAD~1:./Book.docx"],
+        ["-C", folder, "log", "-1", "--format=%H %cI", "HEAD~1"],
+    ]
+    assert list(saves.scratch.iterdir()) == []
+    assert sorted(path.name for path in saves.folder.iterdir()) == ["Book.docx", "new.docx", "old.docx"]
+
+
+def test_git_with_two_revisions_compares_the_two_committed_versions(saves, repository, capsys):
+    repository.file.write_text("whatever is on disk is not read")
+    assert saves.run("--git", "v1", "HEAD", str(repository.file), "--utc") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:2] == [
+        f"old: {repository.file} at v1 (commit 1a2b3c4, 2026-10-01 09:05)",
+        f"new: {repository.file} at HEAD (commit 9f8e7d6, 2026-10-02 17:35)",
+    ]
+    assert "differing paragraphs 5" in out
+    assert [call[2:] for call in saves.git.calls()] == [
+        ["show", "v1:./Book.docx"],
+        ["log", "-1", "--format=%H %cI", "v1"],
+        ["show", "HEAD:./Book.docx"],
+        ["log", "-1", "--format=%H %cI", "HEAD"],
+    ]
