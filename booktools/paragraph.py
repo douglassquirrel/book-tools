@@ -35,7 +35,11 @@ BETWEEN_RUNS = {
     "w:bookmarkEnd": "a bookmark",
     "w:commentRangeStart": "the start or end of a comment's range",
     "w:commentRangeEnd": "the start or end of a comment's range",
+    # Text someone has already struck out is not part of the text as it stands.
+    "w:del": "an existing tracked deletion",
+    "w:moveFrom": "an existing tracked deletion",
 }
+EXISTING_INSERTION = "an existing tracked insertion"
 # Elements that wrap runs. An edit may sit wholly inside one but not cross its edge.
 WRAPPERS = {
     "w:hyperlink": "a hyperlink",
@@ -45,6 +49,8 @@ WRAPPERS = {
     "w:fldSimple": "a field",
     "w:bdo": "a text-direction override",
     "w:dir": "a text-direction override",
+    "w:ins": EXISTING_INSERTION,
+    "w:moveTo": EXISTING_INSERTION,
 }
 
 

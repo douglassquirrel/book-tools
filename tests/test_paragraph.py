@@ -97,3 +97,25 @@ def test_reads_text_inside_other_wrappers_of_runs():
         (4, 8, "a content control"),
         (8, 9, "a field"),
     ]
+
+
+def test_reads_the_text_as_it_stands_with_existing_tracked_changes_accepted():
+    xml = (
+        "<w:p><w:r><w:t>The </w:t></w:r>"
+        '<w:ins w:id="0" w:author="A" w:date="2026-01-01T10:00:00Z"><w:r><w:t>quick </w:t></w:r></w:ins>'
+        '<w:del w:id="1" w:author="A" w:date="2026-01-01T10:00:00Z">'
+        "<w:r><w:delText>slow </w:delText></w:r></w:del>"
+        "<w:r><w:t>fox</w:t></w:r>"
+        '<w:moveFrom w:id="2" w:author="A"><w:r><w:t>gone </w:t></w:r></w:moveFrom>'
+        '<w:moveTo w:id="3" w:author="A"><w:r><w:t> came</w:t></w:r></w:moveTo></w:p>'
+    )
+    p = Paragraph(xml)
+    assert p.text == "The quick fox came"
+    assert p.spans == [
+        (4, 10, "an existing tracked insertion"),
+        (13, 18, "an existing tracked insertion"),
+    ]
+    assert p.barriers == [
+        (10, "an existing tracked deletion"),
+        (13, "an existing tracked deletion"),
+    ]
