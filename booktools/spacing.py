@@ -1,5 +1,6 @@
 """The line spacing each paragraph really has, through Word's chain of style inheritance."""
 
+from collections import Counter
 from xml.etree import ElementTree
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -70,3 +71,45 @@ def describe(spacing, expect=480):
     if rule == "auto":
         return f"{value / 240:g} lines", abs(value - expect) <= TOLERANCE
     return f"{rule} {value / 20:g} pt", False
+
+
+def measure(part_xml, styles, expect=480, in_body=False):
+    """One row per paragraph of a part: (its number from 1, the heading above it, its
+    style's name, its spacing in words, whether that is the expected spacing, its text,
+    whether it holds a drawing)."""
+    root = ElementTree.fromstring(part_xml.encode("utf-8"))
+    within = root.find(W + "body") if in_body else root
+    heading = "(start)"
+    rows = []
+    for number, paragraph in enumerate(within.iter(W + "p"), 1):
+        properties = paragraph.find(W + "pPr")
+        style = properties.find(W + "pStyle") if properties is not None else None
+        style_id = style.get(W + "val") if style is not None else styles.default
+        spacing = styles.spacing(style_id)
+        spacing.update(own_spacing(properties))
+        text = "".join(t.text or "" for t in paragraph.iter(W + "t")).strip()
+        if style_id.lower().startswith("heading") and text:
+            heading = text[:45]
+        words, matches = describe(spacing, expect)
+        drawing = bool(paragraph.findall(".//" + W + "drawing"))
+        rows.append((number, heading, styles.name(style_id), words, matches, text, drawing))
+    return rows
+
+
+def report(label, rows, wanted, verbose=False):
+    """The lines for one part: counts, the paragraphs not at the expected spacing by
+    spacing and by style, and with `verbose` each of them."""
+    off = [row for row in rows if not row[4]]
+    lines = [
+        f"== {label}: {len(rows)} paragraphs, {len(rows) - len(off)} {wanted},"
+        f" {len(off)} not {wanted}",
+        f"   by spacing: {Counter(row[3] for row in off).most_common()}",
+        f"   by style: {Counter(row[2] for row in off).most_common()}",
+    ]
+    if verbose:
+        for number, heading, style, words, _, text, drawing in off:
+            picture = "[IMG] " if drawing else ""
+            lines.append(
+                f"   {label} p{number} [{heading}] {style} | {words} | {picture}{text[:90]!r}"
+            )
+    return lines

@@ -185,3 +185,41 @@ SAMPLE_EDITS = [
         "why": "place",
     },
 ]
+
+
+def spaced_parts():
+    """A document with one of each kind of line spacing, for check-spacing."""
+    def spaced(text, spacing="", style="", extra=""):
+        properties = (f'<w:pStyle w:val="{style}"/>' if style else "") + spacing
+        properties = f"<w:pPr>{properties}</w:pPr>" if properties else ""
+        return f"<w:p>{properties}<w:r><w:t>{text}</w:t>{extra}</w:r></w:p>"
+
+    long = "A picture sits in this paragraph, whose text runs on well past ninety characters so that it is cut."
+    body = [
+        heading(1, "The Lighthouse Ledger"),
+        spaced("An ordinary paragraph, double spaced by its style."),
+        spaced("Single by its own setting.", '<w:spacing w:line="240" w:lineRule="auto"/>'),
+        spaced("One and a half by its style.", style="Quote"),
+        spaced(long, '<w:spacing w:line="280" w:lineRule="exact"/>', extra="<w:drawing/>"),
+        heading(2, "Chapter 2 has a very long heading that runs past forty-five characters"),
+        spaced("Within the tolerance.", '<w:spacing w:line="468" w:lineRule="auto"/>'),
+        spaced("At least 24 points.", '<w:spacing w:line="480" w:lineRule="atLeast"/>'),
+        spaced("Only space after is set here.", '<w:spacing w:after="120"/>'),
+    ]
+    parts = sample_parts(body)
+    parts["word/styles.xml"] = parts["word/styles.xml"].replace(
+        "</w:styles>",
+        '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Block Quote"/>'
+        '<w:basedOn w:val="Normal"/><w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr>'
+        "</w:style></w:styles>",
+    )
+    parts["word/endnotes.xml"] = parts["word/endnotes.xml"].replace(
+        "<w:p><w:r><w:endnoteRef/></w:r><w:r><w:t xml:space=\"preserve\"> Ibid.",
+        '<w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>'
+        '<w:r><w:endnoteRef/></w:r><w:r><w:t xml:space="preserve"> Ibid.',
+    )
+    parts["word/footnotes.xml"] = parts["word/footnotes.xml"].replace(
+        "<w:p><w:r><w:footnoteRef/></w:r>",
+        '<w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:footnoteRef/></w:r>',
+    )
+    return parts
