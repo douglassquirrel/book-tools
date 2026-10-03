@@ -161,4 +161,10 @@ def _parser():
         help="keep the copy for inspection even if its verification fails",
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        metavar="SECONDS",
+        help="accepted for uniformity with the other commands; this one runs no outside program",
+    )
     return parser
