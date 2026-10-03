@@ -13,7 +13,7 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "file-tickets", "note-map", "compare-saves")
+LAUNCHERS = ("propose-edits", "file-tickets", "note-map", "compare-saves", "check-spacing")
 
 
 @pytest.fixture
@@ -102,4 +102,15 @@ def test_compare_saves_runs_from_another_folder(kit, tmp_path):
         "old: old.docx", "new: new.docx", "text diff left out (--no-text-diff)",
     ]
     assert sorted(path.name for path in book.iterdir()) == ["new.docx", "old.docx"]
+    assert list(kit.rglob("__pycache__")) == []
+
+
+def test_check_spacing_runs_from_another_folder(kit, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    pack_docx(book / "in.docx", sample_parts())
+    done = run(kit, "check-spacing", "in.docx", cwd=book)
+    assert (done.returncode, done.stderr) == (1, "")
+    assert done.stdout.splitlines()[0] == "== TEXT: 9 paragraphs, 8 double, 1 not double"
+    assert [path.name for path in book.iterdir()] == ["in.docx"]
     assert list(kit.rglob("__pycache__")) == []
