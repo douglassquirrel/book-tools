@@ -114,3 +114,68 @@ def test_a_comment_that_cannot_be_added_or_a_view_that_is_not_json_is_a_failure(
     assert capsys.readouterr().out.splitlines()[1] == (
         "TASK-4  FAILED  Only a title (it could not be read back to check it)"
     )
+
+
+def refused(batch, capsys, *flags):
+    """Run expecting a refusal to start: exit 2, nothing printed, no ticket created."""
+    assert batch.run(*flags) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert ["task", "create"] not in [call[:2] for call in batch.backlog.calls()]
+    return captured.err.splitlines()
+
+
+def test_refuses_to_start_when_backlog_is_not_installed_and_says_how_to_install_it(
+    batch, capsys, monkeypatch, tmp_path
+):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert refused(batch, capsys) == [
+        "file-tickets: the backlog command was not found. Backlog is yours to install:"
+        " brew install backlog-md (or: npm i -g backlog.md)"
+    ]
+
+
+def test_refuses_a_folder_that_is_not_a_backlog_project(batch, capsys):
+    (batch.project / "backlog" / "config.yml").unlink()
+    assert refused(batch, capsys) == [
+        f"file-tickets: {batch.project} is not a Backlog project (it has no backlog/config.yml);"
+        " run backlog init there first"
+    ]
+
+
+def test_refuses_a_backlog_whose_view_has_no_json(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, no_json=True)
+    assert refused(batch, capsys) == [
+        "file-tickets: this backlog has no `task view --json`, which is needed to check each"
+        " ticket; the kit was tested with Backlog 1.53.0"
+    ]
+
+
+def test_refuses_a_missing_or_faulty_tickets_file(batch, capsys):
+    batch.tickets.write_text('[{"title": ""}, {"title": "T", "priority": "urgent"}]')
+    assert refused(batch, capsys) == [
+        f"file-tickets: {batch.tickets} cannot be used:",
+        '  ticket 1: "title" must be text and not empty',
+        '  ticket 2 (T): "priority" must be high, medium or low',
+    ]
+    batch.tickets.unlink()
+    assert refused(batch, capsys) == [f"file-tickets: {batch.tickets}: no such file"]
+
+
+def test_an_empty_tickets_file_succeeds_and_files_nothing(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch, tickets=[])
+    assert batch.run() == 0
+    assert capsys.readouterr().out == "no tickets, nothing filed\n"
+    assert batch.backlog.calls() == []
+
+
+def test_a_usage_error_exits_2_and_help_exits_0(capsys):
+    assert main(["--project"]) == 2
+    assert "usage: file-tickets" in capsys.readouterr().err
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("TICKETS.json", "--project", "--dry-run", "--results", "--skip-existing",
+                 "--ignore-locks", "--timeout"):
+        assert flag in out

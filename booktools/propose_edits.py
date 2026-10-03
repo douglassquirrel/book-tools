@@ -7,6 +7,8 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
+from booktools import cli
+from booktools.cli import Refusal
 from booktools.clock import instant, revision_dates
 from booktools.docx import Docx, DocxError
 from booktools.editsfile import EditsFileError, parse_edits
@@ -16,30 +18,16 @@ from booktools.propose import apply, edit_results, highest_id, verify
 from booktools.report import edit_line
 
 
-class Refusal(Exception):
-    """The command will not start. `lines` say why, the first being the headline."""
-
-    def __init__(self, *lines):
-        super().__init__(lines[0])
-        self.lines = lines
-
-
 def main(argv=None, now=None):
     """Run the command; return its exit code. `now` gives the current time (for tests)."""
-    try:
-        args = _parser().parse_args(argv)
-    except SystemExit as stop:
-        return stop.code
-    try:
-        return _run(args, now or (lambda: datetime.now(timezone.utc)))
-    except KeyboardInterrupt:
-        print("propose-edits: interrupted; nothing written", file=sys.stderr)
-        return 130
-    except Refusal as refusal:
-        print(f"propose-edits: {refusal.lines[0]}", file=sys.stderr)
-        for line in refusal.lines[1:]:
-            print(f"  {line}", file=sys.stderr)
-        return 2
+    now = now or (lambda: datetime.now(timezone.utc))
+    return cli.run(
+        "propose-edits",
+        _parser(),
+        lambda args: _run(args, now),
+        argv,
+        interrupted="interrupted; nothing written",
+    )
 
 
 def _run(args, now):

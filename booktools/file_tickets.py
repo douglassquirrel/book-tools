@@ -2,9 +2,14 @@
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 
+from booktools import cli
+from booktools.cli import Refusal
 from booktools.tickets import (
+    TicketsFileError,
     comment_command,
     create_command,
     created_id,
@@ -13,13 +18,40 @@ from booktools.tickets import (
     view_command,
 )
 
+TESTED_WITH = "1.53.0"
+
 
 def main(argv=None):
     """Run the command; return its exit code."""
-    args = _parser().parse_args(argv)
-    with open(args.tickets, encoding="utf-8") as file:
-        tickets = parse_tickets(file.read())
-    _backlog(["backlog", "task", "view", "--help"], args.project)
+    return cli.run("file-tickets", _parser(), _run, argv)
+
+
+def _run(args):
+    try:
+        with open(args.tickets, encoding="utf-8") as file:
+            tickets = parse_tickets(file.read())
+    except FileNotFoundError:
+        raise Refusal(f"{args.tickets}: no such file") from None
+    except TicketsFileError as error:
+        raise Refusal(f"{args.tickets} cannot be used:", *error.problems) from None
+    if not tickets:
+        print("no tickets, nothing filed")
+        return 0
+    if not os.path.isfile(os.path.join(args.project, "backlog", "config.yml")):
+        raise Refusal(
+            f"{args.project} is not a Backlog project (it has no backlog/config.yml);"
+            " run backlog init there first"
+        )
+    if shutil.which("backlog") is None:
+        raise Refusal(
+            "the backlog command was not found. Backlog is yours to install:"
+            " brew install backlog-md (or: npm i -g backlog.md)"
+        )
+    if "--json" not in _backlog(["backlog", "task", "view", "--help"], args.project).stdout:
+        raise Refusal(
+            "this backlog has no `task view --json`, which is needed to check each"
+            f" ticket; the kit was tested with Backlog {TESTED_WITH}"
+        )
     filed = failed = 0
     for ticket in tickets:
         id, fault = _file(ticket, args.project)
@@ -82,5 +114,26 @@ def _parser():
     parser.add_argument("tickets", metavar="TICKETS.json", help="the tickets file: a JSON list")
     parser.add_argument(
         "--project", required=True, metavar="DIR", help="the folder of the Backlog project"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print each backlog command and run nothing"
+    )
+    parser.add_argument(
+        "--results", metavar="FILE", help="record each ticket's id and outcome here, to resume"
+    )
+    parser.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="skip a ticket whose exact title is already in the project",
+    )
+    parser.add_argument(
+        "--ignore-locks", action="store_true", help="start even if Backlog left a lock behind"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120,
+        metavar="SECONDS",
+        help="how long backlog may take over one command (default 120)",
     )
     return parser
