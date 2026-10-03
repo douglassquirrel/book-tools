@@ -13,7 +13,7 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "file-tickets", "note-map")
+LAUNCHERS = ("propose-edits", "file-tickets", "note-map", "compare-saves")
 
 
 @pytest.fixture
@@ -88,4 +88,18 @@ def test_note_map_runs_from_another_folder(kit, tmp_path):
     assert (done.returncode, done.stderr) == (0, "")
     assert done.stdout.splitlines()[0] == "dry run: 3 notes: 0 carried, 3 new, 0 retired; nothing written"
     assert [path.name for path in book.iterdir()] == ["in.docx"]
+    assert list(kit.rglob("__pycache__")) == []
+
+
+def test_compare_saves_runs_from_another_folder(kit, tmp_path):
+    book = tmp_path / "book"
+    book.mkdir()
+    pack_docx(book / "old.docx", sample_parts())
+    pack_docx(book / "new.docx", sample_parts())
+    done = run(kit, "compare-saves", "old.docx", "new.docx", "--no-text-diff", cwd=book)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.splitlines()[:3] == [
+        "old: old.docx", "new: new.docx", "text diff left out (--no-text-diff)",
+    ]
+    assert sorted(path.name for path in book.iterdir()) == ["new.docx", "old.docx"]
     assert list(kit.rglob("__pycache__")) == []
