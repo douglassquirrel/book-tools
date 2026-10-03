@@ -44,3 +44,12 @@ def test_revisions_not_in_the_set_are_left_exactly_as_they_are():
     assert reject(THEIRS, {8}) == untouched + "</w:p>"
     assert accept(THEIRS, {8}) == untouched + "<w:r><w:t>ours</w:t></w:r></w:p>"
     assert accept(THEIRS, set()) == THEIRS
+
+
+def test_an_empty_revision_mark_inside_a_revision_does_not_end_it_early():
+    # Word marks an inserted paragraph mark with an empty <w:ins/> inside formatting.
+    xml = (
+        f'<w:p><w:ins w:id="8"{S}><w:r><w:rPr><w:ins w:id="1" w:author="Ed"/></w:rPr>'
+        "<w:t>ours</w:t></w:r></w:ins></w:p>"
+    )
+    assert reject(xml, {8}) == "<w:p></w:p>"
