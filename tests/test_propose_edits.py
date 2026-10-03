@@ -195,3 +195,38 @@ def test_an_empty_edits_file_succeeds_and_writes_no_copy(tmp_path, capsys):
     assert book.run() == 0
     assert capsys.readouterr().out == "no edits, nothing written\n"
     assert not book.out.exists()
+
+
+def revisions(book):
+    """(element, attributes) of every tracked change in the copy."""
+    import re
+
+    with zipfile.ZipFile(book.out) as copy:
+        xml = copy.read("word/document.xml") + copy.read("word/endnotes.xml")
+    return re.findall(r"<w:(ins|del) ([^>]*)>", xml.decode("utf-8"))
+
+
+def test_author_and_date_land_on_every_revision(book):
+    assert book.run("--author", "A. N. Editor", "--date", "2026-07-01T09:30:45") == 0
+    found = revisions(book)
+    assert [name for name, _ in found] == ["del", "ins", "del", "ins"]
+    body = 'w:author="A. N. Editor" w:date="2026-07-01T09:30:00Z" w16du:dateUtc="2026-07-01T08:30:00Z"'
+    note = 'w:author="A. N. Editor" w:date="2026-07-01T09:30:00Z"'
+    assert [attrs.split(" ", 1)[1] for _, attrs in found] == [body, body, body, note]
+
+
+def test_a_date_with_an_offset_is_an_instant_and_utc_writes_utc(book):
+    assert book.run("--date", "2026-07-01T09:30:00+02:00") == 0
+    assert 'w:date="2026-07-01T08:30:00Z" w16du:dateUtc="2026-07-01T07:30:00Z"' in revisions(book)[0][1]
+    assert book.run("--force", "--utc", "--date", "2026-07-01T09:30:00Z") == 0
+    assert 'w:date="2026-07-01T09:30:00Z" w16du:dateUtc="2026-07-01T09:30:00Z"' in revisions(book)[0][1]
+    # Without --date the clock is used, and with --utc it is written as UTC.
+    assert book.run("--force", "--utc") == 0
+    assert 'w:date="2026-10-03T13:46:00Z"' in revisions(book)[0][1]
+
+
+def test_a_date_that_cannot_be_read_is_refused(book, capsys):
+    assert refused(book, capsys, "--date", "last Tuesday") == [
+        "propose-edits: --date must be like 2026-10-03T14:46 (London time, or UTC with --utc),"
+        " or carry an offset such as +01:00 or Z"
+    ]

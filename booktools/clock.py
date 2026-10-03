@@ -29,3 +29,17 @@ def _last_sunday(year, month):
     """01:00 UTC on the last Sunday of the month."""
     day = datetime(year, month, 31, 1, 0, tzinfo=timezone.utc)
     return day - timedelta(days=(day.weekday() + 1) % 7)
+
+
+def instant(text, utc=False):
+    """The moment an ISO date and time names. One with an offset or a "Z" is taken as
+    it stands; one without is London clock time, or UTC if `utc` is true.
+    Raises ValueError if `text` is not an ISO date and time."""
+    value = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    if value.tzinfo is not None:
+        return value
+    value = value.replace(tzinfo=timezone.utc)
+    if utc:
+        return value
+    summer = value - timedelta(hours=1)
+    return summer if london(summer) == value else value

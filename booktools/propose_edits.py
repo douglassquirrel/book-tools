@@ -7,7 +7,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 
-from booktools.clock import revision_dates
+from booktools.clock import instant, revision_dates
 from booktools.docx import Docx, DocxError
 from booktools.editsfile import EditsFileError, parse_edits
 from booktools.manuscript import Manuscript
@@ -40,6 +40,13 @@ def main(argv=None, now=None):
 
 
 def _run(args, now):
+    try:
+        when = instant(args.date, utc=args.utc) if args.date else now()
+    except ValueError:
+        raise Refusal(
+            "--date must be like 2026-10-03T14:46 (London time, or UTC with --utc),"
+            " or carry an offset such as +01:00 or Z"
+        ) from None
     try:
         with open(args.edits, encoding="utf-8") as file:
             edits = parse_edits(file.read())
@@ -79,7 +86,7 @@ def _run(args, now):
             print(edit_line(found, found.text, _place(manuscript, found), "found"))
         print(f"dry run: {_count(len(located), 'edit')} found; {args.out} would be written; nothing written")
         return 0
-    dates = revision_dates(now())
+    dates = revision_dates(when, utc=args.utc)
     out = apply(parts, located, args.author, dates)
     changed = {name: text for name, text in out.items() if text != parts[name]}
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
@@ -118,6 +125,12 @@ def _parser():
     parser.add_argument("--in", dest="manuscript", required=True, metavar="MANUSCRIPT.docx")
     parser.add_argument("--out", required=True, metavar="NEW.docx", help="the copy to write")
     parser.add_argument("--author", default="Claude", metavar="NAME")
+    parser.add_argument(
+        "--date", metavar="ISO", help="the date and time to put on the changes (default: now)"
+    )
+    parser.add_argument(
+        "--utc", action="store_true", help="write dates in UTC instead of London time"
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="show where each edit falls and write nothing"
     )
