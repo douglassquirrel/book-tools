@@ -150,15 +150,15 @@ def _package(parts, out, located):
     edited = {(found.target.part, found.target.number) for found in located}
     changed = sorted({part for part, _ in edited})
     for part in parts:
-        if part not in changed:
-            if out.get(part) != parts[part]:
-                return ("package", False, f"{part} has changed and no edit is in it")
-            continue
-        try:
-            ElementTree.fromstring(out[part].encode("utf-8"))
-        except ElementTree.ParseError as error:
-            return ("package", False, f"{part} is not well-formed XML: {error}")
-        fault = _strayed(part, parts[part], out[part], edited)
+        fault = None
+        if part in changed:
+            try:
+                ElementTree.fromstring(out[part].encode("utf-8"))
+                fault = _strayed(part, parts[part], out[part], edited)
+            except ElementTree.ParseError as error:
+                fault = f"{part} is not well-formed XML: {error}"
+        elif out.get(part) != parts[part]:
+            fault = f"{part} has changed and no edit is in it"
         if fault:
             return ("package", False, fault)
     detail = f"{_count(len(changed), 'part')} changed, each well-formed"

@@ -208,3 +208,24 @@ def test_a_change_inside_a_hyperlink_stays_inside_it():
         f'<w:r>{link}<w:t xml:space="preserve"> site</w:t></w:r>'
         "</w:hyperlink></w:p>"
     )
+
+
+def test_text_equal_to_the_whole_paragraph_can_be_replaced():
+    xml = "<w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:t>All of it.</w:t></w:r></w:p>"
+    out = revise(Paragraph(xml), Change(0, 10, "None.", del_id=7, ins_id=8), STAMP)
+    assert out == (
+        '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'
+        + DEL + "<w:r><w:delText>All of it.</w:delText></w:r></w:del>"
+        + INS + "<w:r><w:t>None.</w:t></w:r></w:ins></w:p>"
+    )
+
+
+def test_a_change_across_a_paragraph_of_twenty_runs():
+    letters = "abcdefghijklmnopqrst"
+    xml = "<w:p>" + "".join(f"<w:r><w:t>{c}</w:t></w:r>" for c in letters) + "</w:p>"
+    out = revise(Paragraph(xml), Change(1, 19, "-", del_id=7, ins_id=8), STAMP)
+    middle = "".join(f"<w:r><w:delText>{c}</w:delText></w:r>" for c in letters[1:19])
+    assert out == (
+        "<w:p><w:r><w:t>a</w:t></w:r>" + DEL + middle + "</w:del>"
+        + INS + "<w:r><w:t>-</w:t></w:r></w:ins><w:r><w:t>t</w:t></w:r></w:p>"
+    )

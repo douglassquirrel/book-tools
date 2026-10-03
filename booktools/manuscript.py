@@ -128,10 +128,11 @@ class Manuscript:
 
     def _paragraph_at(self, offset):
         """The index in `body` of the paragraph holding the body offset `offset`."""
-        for index, target in enumerate(self.body):
-            if target.start <= offset < target.end:
-                return index
-        raise IndexError(offset)
+        return next(
+            index
+            for index, target in enumerate(self.body)
+            if target.start <= offset < target.end
+        )
 
     def _chapter_level(self):
         """The heading level that sections most often open with: where notes restart."""

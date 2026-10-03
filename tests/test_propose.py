@@ -197,3 +197,34 @@ def test_new_ids_start_above_the_highest_id_anywhere_in_the_document():
     }
     assert highest_id(parts) == 55
     assert highest_id({BODY: "<w:document/>"}) == 0
+
+
+def test_a_paragraph_added_to_or_missing_from_the_copy_fails_the_checks():
+    results = checked((BODY, "<w:sectPr/>", "<w:p/><w:sectPr/>"))
+    assert results[0] == (
+        "reject all",
+        False,
+        "word/document.xml has 4 paragraphs where 3 were expected",
+    )
+    assert results[3] == ("package", False, "word/document.xml has changed outside its paragraphs")
+
+
+def test_each_edit_is_judged_by_its_own_paragraph_in_the_copy():
+    from booktools.propose import edit_results
+
+    located = plan(EDITS, Manuscript(PARTS), highest_id=0)
+    out = apply(PARTS, located, "Claude", DATES)
+    assert edit_results(PARTS, out, located) == [True, True, True]
+    wrong = dict(out)
+    wrong[BODY] = out[BODY].replace("<w:t>dog</w:t>", "<w:t>cat</w:t>")
+    assert edit_results(PARTS, wrong, located) == [False, False, True]  # both share the paragraph
+    emptied = dict(out)
+    emptied[ENDNOTES] = NOTES + "</w:endnotes>"
+    assert edit_results(PARTS, emptied, located) == [True, True, False]
+
+
+def test_package_fails_when_something_is_slipped_in_between_two_paragraphs():
+    slipped = "</w:p>" + '<w:bookmarkEnd w:id="9"/>' + p("untouched &amp; unchanged")
+    results = checked((BODY, "</w:p>" + p("untouched &amp; unchanged"), slipped))
+    assert failed(results) == ["package"]
+    assert results[3][2] == "word/document.xml has changed outside its paragraphs"

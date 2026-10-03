@@ -122,10 +122,8 @@ def _inserted(xml, run, change, stamp):
 
 def _piece_holding(paragraph, offset):
     """The piece of text holding the character at `offset`, and the offset within it."""
-    for piece in paragraph.pieces:
-        if piece.start <= offset < piece.start + len(piece.units):
-            return piece, offset - piece.start
-    raise IndexError(offset)
+    piece = next(p for p in paragraph.pieces if p.start <= offset < p.start + len(p.units))
+    return piece, offset - piece.start
 
 
 def _formatting(xml, run):

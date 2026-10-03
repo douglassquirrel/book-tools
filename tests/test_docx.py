@@ -72,3 +72,14 @@ def test_a_file_that_is_missing_or_not_a_docx_is_refused_in_words(tmp_path):
     odd = tmp_path / "odd.docx"
     pack_docx(odd, {"word/document.xml": "<w:document>café</w:document>".encode("utf-16")})
     assert refusal(odd) == f"{odd}: word/document.xml is not UTF-8 text"
+
+
+def test_names_the_first_entry_of_a_copy_that_is_not_the_same_bytes(sample, tmp_path):
+    original = Docx(sample)
+    same = tmp_path / "same.docx"
+    original.write_copy(same, {"word/document.xml": "<w:document>new</w:document>"})
+    assert original.strayed(Docx(same), {"word/document.xml"}) is None
+    assert original.strayed(Docx(same), set()) == "word/document.xml"
+    fewer = tmp_path / "fewer.docx"
+    pack_docx(fewer, {k: v for k, v in PARTS.items() if k != "docProps/core.xml"})
+    assert original.strayed(Docx(fewer), set()) == "the list of entries"

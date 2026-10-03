@@ -41,3 +41,14 @@ def test_with_utc_both_dates_are_utc():
         "2026-10-03T13:46:00Z",
         "2026-10-03T13:46:00Z",
     )
+
+
+def test_a_typed_date_without_an_offset_is_london_time_or_utc_when_asked():
+    from booktools.clock import instant
+
+    assert instant("2026-07-01T09:30") == at("2026-07-01T08:30:00")  # summer: an hour ahead
+    assert instant("2026-01-15T09:30") == at("2026-01-15T09:30:00")
+    assert instant("2026-07-01T09:30", utc=True) == at("2026-07-01T09:30:00")
+    assert instant("2026-07-01T09:30:00Z") == at("2026-07-01T09:30:00")
+    with pytest.raises(ValueError):
+        instant("last Tuesday")

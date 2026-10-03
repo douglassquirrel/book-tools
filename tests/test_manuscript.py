@@ -141,3 +141,9 @@ def test_a_footnote_numbered_afresh_on_each_page_is_named_by_its_count_alone():
     body_setting = '<w:footnotePr><w:numRestart w:val="eachPage"/></w:footnotePr>'
     m = book(heading(1, "One"), ref("footnote", 1), "<w:p><w:pPr><w:sectPr>" + body_setting + "</w:sectPr></w:pPr></w:p>")
     assert m.note_label("footnote", 1) == "footnote:1"
+
+
+def test_a_marker_with_no_note_behind_it_is_not_counted():
+    parts = dict(PARTS)
+    parts[BODY] = parts[BODY].replace("<w:sectPr/>", ref("endnote", 99) + "<w:sectPr/>")
+    assert [note[0].place for note in Manuscript(parts).endnotes] == ["endnote:1", "endnote:2"]

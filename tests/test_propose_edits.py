@@ -364,3 +364,18 @@ def test_text_stored_decomposed_is_found_by_an_edit_typed_composed(tmp_path, cap
     assert capsys.readouterr().out.splitlines()[0] == (
         "edit 1 | body, paragraph 10 | The café [by → near] the pier. | | PASS"
     )
+
+
+def test_edits_in_a_table_cell_and_in_a_footnote(tmp_path, capsys):
+    edits = [
+        {"id": "cell", "find": "12 pints", "replace": "14 pints"},
+        {"id": "foot", "where": "footnote:1", "find": "Imperial", "replace": "British"},
+        {"id": "any", "where": "all", "find": "Ibid.", "replace": "Ibidem."},
+    ]
+    book = Book(tmp_path, edits)
+    assert book.run() == 0
+    assert capsys.readouterr().out.splitlines()[:3] == [
+        "cell | body, paragraph 5 | Oil used: [12 → 14] pints | | PASS",
+        "any | Chapter 2, note 2 (endnote:2) |  [Ibid → Ibidem]. | | PASS",
+        "foot | Chapter 1, note 1 (footnote:1) |  [Imperial → British] pints. | | PASS",
+    ]
