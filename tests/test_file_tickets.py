@@ -268,3 +268,43 @@ def test_without_results_no_file_is_written(batch, tmp_path):
     before = sorted(path.name for path in tmp_path.iterdir())
     assert batch.run() == 0
     assert sorted(path.name for path in tmp_path.iterdir()) == before
+
+
+def test_skip_existing_leaves_out_a_ticket_whose_exact_title_is_already_there(batch, capsys):
+    assert batch.run() == 0  # both tickets are now in the project
+    capsys.readouterr()
+    batch.tickets.write_text(json.dumps([{"title": "Only a title"}, {"title": "Only a title."}]))
+    assert batch.run("--skip-existing") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "TASK-2  skipped  Only a title (a ticket with this title exists)",
+        "TASK-3  filed  Only a title.",
+        "1 filed, 0 failed, 1 skipped",
+    ]
+    assert batch.backlog.calls()[-4:] == [
+        ["task", "view", "--help"],
+        ["task", "list", "--json"],
+        ["task", "create", "--", "Only a title."],
+        ["task", "view", "TASK-3", "--json"],
+    ]
+
+
+def test_without_skip_existing_a_duplicate_title_is_filed(batch, capsys):
+    assert batch.run() == 0
+    assert batch.run() == 0
+    assert capsys.readouterr().out.splitlines()[-3:] == [
+        "TASK-3  filed  Ch. 3: the 2019 figure",
+        "TASK-4  filed  Only a title",
+        "2 filed, 0 failed, 0 skipped",
+    ]
+
+
+def test_skip_existing_refuses_to_go_on_if_the_project_cannot_be_listed(tmp_path, monkeypatch, capsys):
+    batch = Batch(tmp_path, monkeypatch)
+    source = (batch.backlog.folder / "backlog").read_text()
+    (batch.backlog.folder / "backlog").write_text(
+        source.replace('print(json.dumps({"schemaVersion": 1, "kind": "task-list"', 'print(("oops", {"k": 1, "kind": "task-list"')
+    )
+    assert refused(batch, capsys, "--skip-existing") == [
+        "file-tickets: the project's tickets could not be listed (backlog task list --json"
+        " did not print what was expected), so --skip-existing cannot be relied on"
+    ]

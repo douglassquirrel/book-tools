@@ -75,10 +75,11 @@ def _run(args):
             "this backlog has no `task view --json`, which is needed to check each"
             f" ticket; the kit was tested with Backlog {TESTED_WITH}"
         )
+    existing = _titles(args.project) if args.skip_existing else {}
     filed = failed = skipped = 0
     for ticket in tickets:
         earlier = records.get(ticket.index)
-        if earlier and earlier["id"]:
+        if earlier and earlier["id"] and earlier["outcome"] != "skipped":
             # It exists in Backlog already: never create it a second time.
             if earlier["outcome"] == "filed":
                 skipped += 1
@@ -91,22 +92,42 @@ def _run(args):
                     f" (created in an earlier run and not filed again; then: {then})"
                 )
             continue
-        id, fault = _file(ticket, args.project)
-        if fault:
-            failed += 1
-            print(f"{id or '-'}  FAILED  {ticket.title} ({fault})")
+        if ticket.title in existing:
+            id, outcome = existing[ticket.title], "skipped"
+            skipped += 1
+            print(f"{id}  skipped  {ticket.title} (a ticket with this title exists)")
         else:
-            filed += 1
-            print(f"{id}  filed  {ticket.title}")
+            id, fault = _file(ticket, args.project)
+            outcome = f"failed: {fault}" if fault else "filed"
+            if fault:
+                failed += 1
+                print(f"{id or '-'}  FAILED  {ticket.title} ({fault})")
+            else:
+                filed += 1
+                print(f"{id}  filed  {ticket.title}")
+            if id and args.skip_existing:
+                existing[ticket.title] = id
         records[ticket.index] = {
             "index": ticket.index,
             "title": ticket.title,
             "id": id,
-            "outcome": f"failed: {fault}" if fault else "filed",
+            "outcome": outcome,
         }
         _save(args.results, records)
     print(f"{filed} filed, {failed} failed, {skipped} skipped")
     return 1 if failed else 0
+
+
+def _titles(project):
+    """The id of each ticket in the project, open or done, by its exact title."""
+    try:
+        tasks = json.loads(_backlog(LIST, project).stdout)["tasks"]
+        return {task["title"]: task["id"] for task in tasks}
+    except (ValueError, KeyError, TypeError):
+        raise Refusal(
+            "the project's tickets could not be listed (backlog task list --json"
+            " did not print what was expected), so --skip-existing cannot be relied on"
+        ) from None
 
 
 def _save(path, records):
