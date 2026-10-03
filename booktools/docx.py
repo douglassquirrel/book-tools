@@ -15,16 +15,26 @@ class Docx:
 
     def __init__(self, path):
         self.path = path
-        with zipfile.ZipFile(path) as archive:
-            self.entries = [(info, archive.read(info)) for info in archive.infolist()]
+        try:
+            with zipfile.ZipFile(path) as archive:
+                self.entries = [(info, archive.read(info)) for info in archive.infolist()]
+        except FileNotFoundError:
+            raise DocxError(f"{path}: no such file") from None
+        except zipfile.BadZipFile:
+            raise DocxError(f"{path}: not a .docx file (it is not a zip archive)") from None
+        self._texts = {}
+        for info, data in self.entries:
+            if WORD_PART.match(info.filename):
+                try:
+                    self._texts[info.filename] = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    raise DocxError(f"{path}: {info.filename} is not UTF-8 text") from None
+        if "word/document.xml" not in self._texts:
+            raise DocxError(f"{path}: not a Word document (it has no word/document.xml)")
 
     def texts(self):
         """The XML parts directly under word/, as text, by name."""
-        return {
-            info.filename: data.decode("utf-8")
-            for info, data in self.entries
-            if WORD_PART.match(info.filename)
-        }
+        return dict(self._texts)
 
     def write_copy(self, path, replaced):
         """Write a copy at `path` in which the parts named in `replaced` hold the

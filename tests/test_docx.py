@@ -51,3 +51,24 @@ def test_a_copy_differs_only_in_the_parts_replaced(sample, tmp_path):
                 assert new.read(name) == "<w:document>thé</w:document>".encode()
             else:
                 assert new.read(name) == old.read(name)
+
+
+def refusal(path):
+    from booktools.docx import DocxError
+
+    with pytest.raises(DocxError) as caught:
+        Docx(path)
+    return str(caught.value)
+
+
+def test_a_file_that_is_missing_or_not_a_docx_is_refused_in_words(tmp_path):
+    assert refusal(tmp_path / "none.docx") == f"{tmp_path / 'none.docx'}: no such file"
+    text = tmp_path / "notes.docx"
+    text.write_text("just text")
+    assert refusal(text) == f"{text}: not a .docx file (it is not a zip archive)"
+    other = tmp_path / "other.docx"
+    pack_docx(other, {"mimetype": "application/epub+zip"})
+    assert refusal(other) == f"{other}: not a Word document (it has no word/document.xml)"
+    odd = tmp_path / "odd.docx"
+    pack_docx(odd, {"word/document.xml": "<w:document>café</w:document>".encode("utf-16")})
+    assert refusal(odd) == f"{odd}: word/document.xml is not UTF-8 text"
