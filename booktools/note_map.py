@@ -10,7 +10,7 @@ from booktools.docx import Docx, DocxError
 from booktools.manuscript import Manuscript
 from booktools.notemap import LABEL, map_lines, map_rows
 from booktools.notes import read_notes
-from booktools.registry import Registry, dump_registry, match, update
+from booktools.registry import Registry, dump_registry, load_registry, match, update
 
 
 def main(argv=None):
@@ -27,7 +27,11 @@ def _run(args):
         raise Refusal(str(error)) from None
     with open(args.manuscript, "rb") as file:
         save = hashlib.sha256(file.read()).hexdigest()
-    registry = Registry()
+    registry, before = Registry(), None
+    if os.path.exists(args.registry):
+        with open(args.registry, encoding="utf-8") as file:
+            before = file.read()
+        registry = load_registry(before)
     notes = read_notes(Manuscript(docx.texts()))
     matching = match(notes, registry.live())
     updated, ids = update(registry, matching, save)
@@ -38,10 +42,14 @@ def _run(args):
     )
     for note in matching.new:
         print(f"new: {ids[note.place]} {note.place} {_short(note.text)}")
+    for entry in matching.retired:
+        print(f"retired: {entry.id} {_short(entry.text)}")
     retired = [entry.id for entry in updated.entries if entry.retired_in is not None]
     for line in map_lines(map_rows(notes, ids, updated), retired):
         print(line)
-    _write(args.registry, dump_registry(updated))
+    after = dump_registry(updated)
+    if after != before:
+        _write(args.registry, after)
     return 0
 
 
