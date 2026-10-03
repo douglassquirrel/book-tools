@@ -131,3 +131,42 @@ def test_a_pure_insertion_can_go_before_the_character_after_it():
         + '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">Oh. </w:t></w:r></w:ins>'
         + "<w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r><w:r><w:t> sat</w:t></w:r></w:p>"
     )
+
+
+TABBED = (
+    "<w:p><w:r><w:rPr><w:b/></w:rPr>"
+    "<w:t>one</w:t><w:tab/><w:lastRenderedPageBreak/><w:t>two</w:t><w:tab/><w:t>three</w:t>"
+    "</w:r></w:p>"
+)
+
+
+def test_a_run_holding_tabs_is_cut_between_its_children_and_no_tab_is_deleted():
+    out = revise(Paragraph(TABBED), Change(3, 6, "2", del_id=7, ins_id=8), STAMP)
+    assert out == (
+        "<w:p>"
+        "<w:r><w:rPr><w:b/></w:rPr><w:t>one</w:t><w:tab/><w:lastRenderedPageBreak/></w:r>"
+        + DEL
+        + "<w:r><w:rPr><w:b/></w:rPr><w:delText>two</w:delText></w:r></w:del>"
+        + INS
+        + "<w:r><w:rPr><w:b/></w:rPr><w:t>2</w:t></w:r></w:ins>"
+        "<w:r><w:rPr><w:b/></w:rPr><w:tab/><w:t>three</w:t></w:r>"
+        "</w:p>"
+    )
+
+
+def test_an_insertion_beside_a_tab_cuts_the_run_on_the_right_side_of_it():
+    out = revise(Paragraph(TABBED), Change(3, 3, "!", ins_id=8), STAMP)
+    assert out == (
+        "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>one</w:t></w:r>"
+        + INS
+        + "<w:r><w:rPr><w:b/></w:rPr><w:t>!</w:t></w:r></w:ins>"
+        "<w:r><w:rPr><w:b/></w:rPr><w:tab/><w:lastRenderedPageBreak/><w:t>two</w:t><w:tab/>"
+        "<w:t>three</w:t></w:r></w:p>"
+    )
+    out = revise(Paragraph(TABBED), Change(3, 3, "!", ins_id=8, after=False), STAMP)
+    assert out == (
+        "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>one</w:t><w:tab/><w:lastRenderedPageBreak/></w:r>"
+        + INS
+        + "<w:r><w:rPr><w:b/></w:rPr><w:t>!</w:t></w:r></w:ins>"
+        "<w:r><w:rPr><w:b/></w:rPr><w:t>two</w:t><w:tab/><w:t>three</w:t></w:r></w:p>"
+    )

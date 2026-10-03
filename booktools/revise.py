@@ -2,6 +2,8 @@
 
 import re
 
+from booktools.paragraph import TRANSPARENT
+
 WHITESPACE = tuple(" \t\n\r")
 
 
@@ -35,24 +37,30 @@ def revise(paragraph, change, stamp):
     last, k2 = _piece_holding(paragraph, change.end - 1)
     k2 += 1
     head, tail = first.run, last.run
-    cut_left = k1 > 0
-    cut_right = k2 < len(last.units)
+    from_start = k1 == 0
+    to_end = k2 == len(last.units)
+    cut_left = not from_start or _content_before(head, first.t)
+    cut_right = not to_end or _content_after(tail, last.t)
     before = xml[head.start : first.t.start]
     after = xml[last.t.end : tail.end]
     if first is last:
-        whole = k1 == 0 and k2 == len(first.units)
+        whole = from_start and to_end
         text = xml[first.t.start : first.t.end] if whole else _text(first.units[k1:k2])
     else:
         text = (
-            (_text(first.units[k1:]) if cut_left else xml[first.t.start : first.t.end])
+            (xml[first.t.start : first.t.end] if from_start else _text(first.units[k1:]))
             + xml[first.t.end : last.t.start]
-            + (_text(last.units[:k2]) if cut_right else xml[last.t.start : last.t.end])
+            + (xml[last.t.start : last.t.end] if to_end else _text(last.units[:k2]))
         )
-    left = before + _text(first.units[:k1]) + "</w:r>" if cut_left else ""
+    left = ""
+    if cut_left:
+        left = before + ("" if from_start else _text(first.units[:k1])) + "</w:r>"
     deleted = (
         (_shell(xml, head) if cut_left else before) + text + ("</w:r>" if cut_right else after)
     )
-    right = _shell(xml, tail) + _text(last.units[k2:]) + after if cut_right else ""
+    right = ""
+    if cut_right:
+        right = _shell(xml, tail) + ("" if to_end else _text(last.units[k2:])) + after
     return (
         xml[: head.start]
         + left
@@ -72,14 +80,34 @@ def _insert(paragraph, change, stamp):
         piece, k = _piece_holding(paragraph, change.start)
     run = piece.run
     inserted = _inserted(xml, run, change, stamp)
-    if k == 0:
+    at_start = k == 0
+    at_end = k == len(piece.units)
+    if at_start and not _content_before(run, piece.t):
         return xml[: run.start] + inserted + xml[run.start :]
-    if k == len(piece.units):
+    if at_end and not _content_after(run, piece.t):
         return xml[: run.end] + inserted + xml[run.end :]
-    left = xml[run.start : piece.t.start] + _text(piece.units[:k]) + "</w:r>"
-    right = _shell(xml, run) + _text(piece.units[k:]) + xml[piece.t.end : run.end]
-    return xml[: run.start] + left + inserted + right + xml[run.end :]
+    whole = xml[piece.t.start : piece.t.end]
+    left = "" if at_start else whole if at_end else _text(piece.units[:k])
+    right = "" if at_end else whole if at_start else _text(piece.units[k:])
+    return (
+        xml[: piece.t.start]
+        + left
+        + "</w:r>"
+        + inserted
+        + _shell(xml, run)
+        + right
+        + xml[piece.t.end :]
+    )
 
+
+def _content_before(run, t):
+    """Whether the run holds anything but formatting before its text element `t`."""
+    return any(c.name not in TRANSPARENT for c in run.children if c.start < t.start)
+
+
+def _content_after(run, t):
+    """Whether the run holds anything that matters after its text element `t`."""
+    return any(c.name not in TRANSPARENT for c in run.children if c.start > t.start)
 
 def _inserted(xml, run, change, stamp):
     """The new text as a tracked insertion formatted as `run` is, or nothing."""
