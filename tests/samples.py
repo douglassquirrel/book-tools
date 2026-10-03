@@ -98,6 +98,42 @@ def sample_parts(body=None):
     }
 
 
+def edited_parts():
+    """A later save of the sample: a word changed, bold removed from a word, a font name
+    dropped, a paragraph's spacing changed, a paragraph added, and a note added before
+    the others (so every later note is renumbered)."""
+    body = list(BODY_PARAGRAPHS)
+    # Word renumbers note ids in document order on saving: the old note 1 becomes 2.
+    body[2] = (
+        body[2]
+        .replace("lit at dusk", "lit at dawn")
+        .replace('<w:endnoteReference w:id="1"/>', '<w:endnoteReference w:id="2"/>')
+        .replace(
+            '<w:r><w:t xml:space="preserve">The lamp',
+            '<w:r><w:endnoteReference w:id="1"/></w:r><w:r><w:t xml:space="preserve">The lamp',
+        )
+    )
+    body[3] = body[3].replace("<w:r><w:rPr><w:b/></w:rPr><w:t>large</w:t></w:r>", "<w:r><w:t>large</w:t></w:r>")
+    body[5] = body[5].replace('<w:rPr><w:rFonts w:ascii="Times-Roman" w:hAnsi="Times-Roman"/></w:rPr>', "")
+    body[6] = body[6].replace('w:line="280"', 'w:line="300"')
+    body.insert(7, p("A paragraph added in the later save."))
+    body[9] = body[9].replace('<w:endnoteReference w:id="2"/>', '<w:endnoteReference w:id="3"/>')
+    parts = sample_parts(body)
+    parts["word/endnotes.xml"] = (
+        DECLARATION
+        + f"<w:endnotes {W}>"
+        + separators("endnote")
+        + note("endnote", 1, "A note added in the later save.")
+        + note("endnote", 2, "Recorded by Trinity House in the station log.")
+        + note("endnote", 3, "Ibid.")
+        + "</w:endnotes>"
+    )
+    parts["docProps/core.xml"] = parts["docProps/core.xml"].replace(
+        "<cp:revision>3</cp:revision>", "<cp:revision>4</cp:revision>"
+    ).replace("2026-10-01T09:00:00Z", "2026-10-02T17:30:00Z")
+    return parts
+
+
 SAMPLE_EDITS = [
     {
         "id": "E1",

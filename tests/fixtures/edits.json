@@ -1,0 +1,21 @@
+[
+  {
+    "id": "E1",
+    "find": "keeper isn’t one",
+    "replace": "keeper is not one",
+    "why": "no contractions"
+  },
+  {
+    "id": "E2",
+    "find": "large ledger",
+    "replace": "ledger",
+    "why": "cut"
+  },
+  {
+    "id": "E3",
+    "where": "endnote:1",
+    "find": "Trinity House",
+    "replace": "Trinity House, London",
+    "why": "place"
+  }
+]
