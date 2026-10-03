@@ -30,6 +30,7 @@ IN_RUN = {
 }
 # Children of a run that an edit may pass over: they hold no content.
 TRANSPARENT = {"w:rPr", "w:lastRenderedPageBreak"}
+EXISTING_DELETION = "an existing tracked deletion"
 # Marks that sit between runs. Proofing marks are not listed: Word remakes them.
 BETWEEN_RUNS = {
     "w:bookmarkStart": "a bookmark",
@@ -37,8 +38,8 @@ BETWEEN_RUNS = {
     "w:commentRangeStart": "the start or end of a comment's range",
     "w:commentRangeEnd": "the start or end of a comment's range",
     # Text someone has already struck out is not part of the text as it stands.
-    "w:del": "an existing tracked deletion",
-    "w:moveFrom": "an existing tracked deletion",
+    "w:del": EXISTING_DELETION,
+    "w:moveFrom": EXISTING_DELETION,
 }
 EXISTING_INSERTION = "an existing tracked insertion"
 # Elements that wrap runs. An edit may sit wholly inside one but not cross its edge.
@@ -118,6 +119,24 @@ class Paragraph:
                 found.append((to_text[at], to_text[end]))
             at = nfc.find(needle, at + 1)
         return found
+
+    def obstacle(self, start, end):
+        """Say what stops the text from `start` to `end` being edited, or None.
+
+        A barrier counts only when it is strictly inside the range; an existing
+        insertion counts when any of its text is in the range.
+        """
+        for a, b, name in self.spans:
+            if name == EXISTING_INSERTION:
+                if a < end and start < b:
+                    return "touches " + name
+            elif start < a < end or start < b < end:
+                return "crosses the start or end of " + name
+        for at, name in self.barriers:
+            if start < at < end:
+                verb = "touches" if name == EXISTING_DELETION else "crosses"
+                return f"{verb} {name}"
+        return None
 
     def _composed(self):
         """The text in NFC, and the offset in the text of each offset in the NFC form

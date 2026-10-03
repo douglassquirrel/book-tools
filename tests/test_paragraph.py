@@ -157,3 +157,45 @@ def test_does_not_match_a_letter_apart_from_its_accent():
 
 def test_matches_decomposed_hangul_against_composed():
     assert find(para("한글"), "한") == [(0, 3)]
+
+
+TABBED = "<w:p><w:r><w:t>one</w:t><w:tab/><w:t>two</w:t></w:r></w:p>"
+LINKED = (
+    "<w:p><w:r><w:t>see </w:t></w:r>"
+    '<w:hyperlink r:id="rId5"><w:r><w:t>the site</w:t></w:r></w:hyperlink>'
+    "<w:r><w:t> now</w:t></w:r></w:p>"
+)
+CHANGED = (
+    "<w:p><w:r><w:t>The </w:t></w:r>"
+    '<w:ins w:id="0" w:author="A"><w:r><w:t>quick </w:t></w:r></w:ins>'
+    "<w:r><w:t>brown </w:t></w:r>"
+    '<w:del w:id="1" w:author="A"><w:r><w:delText>slow </w:delText></w:r></w:del>'
+    "<w:r><w:t>fox</w:t></w:r></w:p>"
+)
+
+
+def test_a_range_is_refused_only_when_a_barrier_is_strictly_inside_it():
+    p = Paragraph(TABBED)
+    assert p.obstacle(1, 5) == "crosses a tab"
+    assert p.obstacle(0, 3) is None  # ends where the tab stands
+    assert p.obstacle(3, 6) is None  # starts where the tab stands
+
+
+def test_a_range_may_sit_inside_a_hyperlink_but_not_cross_its_edge():
+    p = Paragraph(LINKED)
+    assert p.obstacle(4, 12) is None  # exactly the link's text
+    assert p.obstacle(8, 12) is None  # wholly inside
+    assert p.obstacle(0, 4) is None  # wholly before
+    assert p.obstacle(2, 7) == "crosses the start or end of a hyperlink"
+    assert p.obstacle(8, 14) == "crosses the start or end of a hyperlink"
+    assert p.obstacle(0, 16) == "crosses the start or end of a hyperlink"
+
+
+def test_a_range_touching_an_existing_tracked_change_is_refused():
+    p = Paragraph(CHANGED)  # reads "The quick brown fox"
+    assert p.obstacle(5, 8) == "touches an existing tracked insertion"  # inside it
+    assert p.obstacle(2, 6) == "touches an existing tracked insertion"
+    assert p.obstacle(0, 4) is None  # ends where the insertion starts
+    assert p.obstacle(10, 15) is None  # starts where it ends
+    assert p.obstacle(12, 18) == "touches an existing tracked deletion"
+    assert p.obstacle(16, 19) is None  # starts where the deletion stands
