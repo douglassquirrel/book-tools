@@ -28,6 +28,7 @@ IN_RUN = {
     "w:fldChar": "a field",
     "w:instrText": "a field",
 }
+MARKERS = {"w:endnoteReference": "endnote", "w:footnoteReference": "footnote"}
 # Children of a run that an edit may pass over: they hold no content.
 TRANSPARENT = {"w:rPr", "w:lastRenderedPageBreak"}
 EXISTING_DELETION = "an existing tracked deletion"
@@ -71,6 +72,7 @@ class Paragraph:
         self.xml = xml
         self.pieces = []
         self.barriers = []  # (offset in the text, what stands there)
+        self.markers = []  # (offset in the text, "endnote" or "footnote", the note's id)
         self.spans = []  # (start, end, what wraps the text between them)
         self._length = 0
         self._nfc = None
@@ -100,6 +102,10 @@ class Paragraph:
                 self._length += len(units)
             elif child.name in IN_RUN:
                 self.barriers.append((self._length, IN_RUN[child.name]))
+                if child.name in MARKERS:
+                    id = re.search(r'\bw:id="(-?\d+)"', child.attrs)
+                    kind = MARKERS[child.name]
+                    self.markers.append((self._length, kind, id.group(1) if id else None))
             elif child.name not in TRANSPARENT:
                 self.barriers.append((self._length, f"a special character ({child.name})"))
 

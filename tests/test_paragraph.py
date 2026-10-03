@@ -199,3 +199,14 @@ def test_a_range_touching_an_existing_tracked_change_is_refused():
     assert p.obstacle(10, 15) is None  # starts where it ends
     assert p.obstacle(12, 18) == "touches an existing tracked deletion"
     assert p.obstacle(16, 19) is None  # starts where the deletion stands
+
+
+def test_records_which_note_each_marker_points_to_and_where_it_stands():
+    xml = (
+        "<w:p><w:r><w:t>One.</w:t></w:r>"
+        '<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="7"/></w:r>'
+        "<w:r><w:t> Two</w:t></w:r>"
+        '<w:r><w:footnoteReference w:customMarkFollows="1" w:id="2"/></w:r>'
+        "<w:r><w:t> three.</w:t></w:r></w:p>"
+    )
+    assert Paragraph(xml).markers == [(4, "endnote", "7"), (8, "footnote", "2")]
