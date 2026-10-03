@@ -42,3 +42,49 @@ def test_a_change_at_the_very_start_or_end_or_of_the_whole_run_leaves_no_empty_r
         "<w:p>" + DEL + '<w:r><w:delText xml:space="preserve">One two </w:delText></w:r></w:del>'
         + change + "</w:p>"
     )
+
+
+THREE_RUNS = (
+    "<w:p>"
+    "<w:r><w:t>The qu</w:t></w:r>"
+    '<w:proofErr w:type="spellStart"/>'
+    "<w:r><w:rPr><w:i/></w:rPr><w:t>ick bro</w:t></w:r>"
+    '<w:proofErr w:type="spellEnd"/>'
+    '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">wn fox </w:t></w:r>'
+    "</w:p>"
+)
+
+
+def test_a_change_across_two_runs_cuts_each_and_takes_the_formatting_of_the_first():
+    out = revise(Paragraph(THREE_RUNS), Change(4, 9, "slow", del_id=7, ins_id=8), STAMP)
+    assert out == (
+        "<w:p>"
+        '<w:r><w:t xml:space="preserve">The </w:t></w:r>'
+        + DEL
+        + "<w:r><w:delText>qu</w:delText></w:r>"
+        '<w:proofErr w:type="spellStart"/>'
+        "<w:r><w:rPr><w:i/></w:rPr><w:delText>ick</w:delText></w:r></w:del>"
+        + INS
+        + "<w:r><w:t>slow</w:t></w:r></w:ins>"
+        '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> bro</w:t></w:r>'
+        '<w:proofErr w:type="spellEnd"/>'
+        '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">wn fox </w:t></w:r>'
+        "</w:p>"
+    )
+
+
+def test_a_change_across_three_runs_keeps_each_run_s_own_formatting_in_the_deletion():
+    out = revise(Paragraph(THREE_RUNS), Change(6, 15, "ack", del_id=7, ins_id=8), STAMP)
+    assert out == (
+        "<w:p>"
+        "<w:r><w:t>The qu</w:t></w:r>"
+        '<w:proofErr w:type="spellStart"/>'
+        + DEL
+        + "<w:r><w:rPr><w:i/></w:rPr><w:delText>ick bro</w:delText></w:r>"
+        '<w:proofErr w:type="spellEnd"/>'
+        "<w:r><w:rPr><w:b/></w:rPr><w:delText>wn</w:delText></w:r></w:del>"
+        + INS
+        + "<w:r><w:rPr><w:i/></w:rPr><w:t>ack</w:t></w:r></w:ins>"
+        '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve"> fox </w:t></w:r>'
+        "</w:p>"
+    )

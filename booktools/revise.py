@@ -32,31 +32,35 @@ def revise(paragraph, change, stamp):
     first, k1 = _piece_holding(paragraph, change.start)
     last, k2 = _piece_holding(paragraph, change.end - 1)
     k2 += 1
-    run = first.run
-    if last.run is not run:
-        raise NotImplementedError
+    head, tail = first.run, last.run
     cut_left = k1 > 0
     cut_right = k2 < len(last.units)
-    before = xml[run.start : first.t.start]
-    after = xml[last.t.end : run.end]
-    whole = k1 == 0 and k2 == len(first.units)
-    text = xml[first.t.start : first.t.end] if whole else _text(first.units[k1:k2])
+    before = xml[head.start : first.t.start]
+    after = xml[last.t.end : tail.end]
+    if first is last:
+        whole = k1 == 0 and k2 == len(first.units)
+        text = xml[first.t.start : first.t.end] if whole else _text(first.units[k1:k2])
+    else:
+        text = (
+            (_text(first.units[k1:]) if cut_left else xml[first.t.start : first.t.end])
+            + xml[first.t.end : last.t.start]
+            + (_text(last.units[:k2]) if cut_right else xml[last.t.start : last.t.end])
+        )
     left = before + _text(first.units[:k1]) + "</w:r>" if cut_left else ""
     deleted = (
-        (_shell(xml, run) if cut_left else before) + text + ("</w:r>" if cut_right else after)
+        (_shell(xml, head) if cut_left else before) + text + ("</w:r>" if cut_right else after)
     )
-    right = _shell(xml, run) + _text(last.units[k2:]) + after if cut_right else ""
+    right = _shell(xml, tail) + _text(last.units[k2:]) + after if cut_right else ""
     return (
-        xml[: run.start]
+        xml[: head.start]
         + left
         + f'<w:del w:id="{change.del_id}"{stamp}>{_as_deleted(deleted)}</w:del>'
-        + f'<w:ins w:id="{change.ins_id}"{stamp}><w:r>{_formatting(xml, run)}'
+        + f'<w:ins w:id="{change.ins_id}"{stamp}><w:r>{_formatting(xml, head)}'
         + _text([_escape(change.new)])
         + "</w:r></w:ins>"
         + right
-        + xml[run.end :]
+        + xml[tail.end :]
     )
-
 
 def _piece_holding(paragraph, offset):
     """The piece of text holding the character at `offset`, and the offset within it."""
