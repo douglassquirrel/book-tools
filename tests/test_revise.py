@@ -170,3 +170,41 @@ def test_an_insertion_beside_a_tab_cuts_the_run_on_the_right_side_of_it():
         + "<w:r><w:rPr><w:b/></w:rPr><w:t>!</w:t></w:r></w:ins>"
         "<w:r><w:rPr><w:b/></w:rPr><w:t>two</w:t><w:tab/><w:t>three</w:t></w:r></w:p>"
     )
+
+
+def test_special_characters_are_escaped_and_entities_are_never_cut_in_two():
+    xml = "<w:p><w:r><w:t>Tom &amp; Jerry &lt;3 cheese</w:t></w:r></w:p>"
+    out = revise(Paragraph(xml), Change(4, 14, "<&> R", del_id=7, ins_id=8), STAMP)
+    assert out == (
+        '<w:p><w:r><w:t xml:space="preserve">Tom </w:t></w:r>'
+        + DEL
+        + "<w:r><w:delText>&amp; Jerry &lt;3</w:delText></w:r></w:del>"
+        + INS
+        + "<w:r><w:t>&lt;&amp;&gt; R</w:t></w:r></w:ins>"
+        '<w:r><w:t xml:space="preserve"> cheese</w:t></w:r></w:p>'
+    )
+
+
+def test_the_stamp_is_written_on_both_revisions_exactly_as_given():
+    stamp = ' w:author="A &amp; B" w:date="2026-10-03T14:46:00Z" w16du:dateUtc="2026-10-03T13:46:00Z"'
+    xml = "<w:p><w:r><w:t>a b c</w:t></w:r></w:p>"
+    out = revise(Paragraph(xml), Change(2, 3, "x", del_id=41, ins_id=42), stamp)
+    assert f'<w:del w:id="41"{stamp}>' in out
+    assert f'<w:ins w:id="42"{stamp}>' in out
+
+
+def test_a_change_inside_a_hyperlink_stays_inside_it():
+    xml = (
+        '<w:p><w:hyperlink r:id="rId5"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+        "<w:t>the old site</w:t></w:r></w:hyperlink></w:p>"
+    )
+    out = revise(Paragraph(xml), Change(4, 7, "new", del_id=7, ins_id=8), STAMP)
+    link = '<w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr>'
+    assert out == (
+        '<w:p><w:hyperlink r:id="rId5">'
+        f'<w:r>{link}<w:t xml:space="preserve">the </w:t></w:r>'
+        + DEL + f"<w:r>{link}<w:delText>old</w:delText></w:r></w:del>"
+        + INS + f"<w:r>{link}<w:t>new</w:t></w:r></w:ins>"
+        f'<w:r>{link}<w:t xml:space="preserve"> site</w:t></w:r>'
+        "</w:hyperlink></w:p>"
+    )
