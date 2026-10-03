@@ -21,7 +21,8 @@ class PlanError(Exception):
 class Located:
     """An edit, the paragraph it falls in, and the change to make there."""
 
-    def __init__(self, edit, target, start, end, change):
+    def __init__(self, edit, target, start, end, change, text):
+        self.text = text  # the paragraph's text before the change
         self.edit = edit
         self.target = target
         self.start = start  # where the "find" text sits in the paragraph's text
@@ -71,7 +72,7 @@ def plan(edits, manuscript, highest_id):
         prefix, suffix = common_ends(old, edit.replace)
         new = edit.replace[prefix : len(edit.replace) - suffix]
         change = Change(start + prefix, end - suffix, new, after=prefix > 0)
-        located.append(Located(edit, target, start, end, change))
+        located.append(Located(edit, target, start, end, change, read(target).text))
     problems.extend(_overlaps(located))
     if problems:
         raise PlanError(problems)
