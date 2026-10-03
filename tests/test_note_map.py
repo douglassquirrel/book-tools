@@ -180,3 +180,72 @@ def test_an_assignment_that_makes_no_sense_is_a_refusal(book, capsys):
     ):
         assert book.run("--assign", flag) == 2
         assert capsys.readouterr().err.splitlines() == [f"note-map: {message}"]
+
+
+def test_the_map_file_is_made_afresh_and_the_map_is_then_not_printed(book, capsys):
+    book.map.write_text("something stale")
+    assert book.run("--map", str(book.map)) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == "new: N-0003 footnote:1 Imperial pints."
+    text = book.map.read_text(encoding="utf-8")
+    assert text.startswith("# Note map\n\nMade by note-map from `Book.docx` (SHA-256 `")
+    assert "| N-0002 | Ibid. | endnote:2 | 2 | Chapter 2 |\n" in text
+    assert text.endswith("\nRetired: none.\n")
+
+
+def test_dry_run_reports_what_would_change_and_writes_nothing(book, capsys):
+    assert book.run("--dry-run", "--map", str(book.map)) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "dry run: 3 notes: 0 carried, 3 new, 0 retired; nothing written",
+        "new: N-0001 endnote:1 Recorded by Trinity House in the station",
+        "new: N-0002 endnote:2 Ibid.",
+        "new: N-0003 footnote:1 Imperial pints.",
+    ]
+    assert not book.registry.exists() and not book.map.exists()
+
+
+def refused(book, capsys, *flags):
+    assert book.run(*flags) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    return captured.err.splitlines()
+
+
+def test_refuses_a_missing_manuscript_a_damaged_registry_and_missing_folders(book, capsys):
+    book.registry.write_text("{}")
+    assert refused(book, capsys) == [
+        f"note-map: {book.registry} cannot be used: it is not a note registry written by note-map"
+    ]
+    assert book.registry.read_text() == "{}"
+    book.registry.unlink()
+    elsewhere = book.records / "missing" / "notes.json"
+    assert book.run("--registry", str(elsewhere)) == 2
+    assert capsys.readouterr().err.splitlines() == [
+        f"note-map: the folder {elsewhere.parent} does not exist"
+    ]
+    assert refused(book, capsys, "--map", str(book.records / "missing" / "map.md")) == [
+        f"note-map: the folder {book.records / 'missing'} does not exist"
+    ]
+    assert refused(book, capsys, "--map", str(book.manuscript)) == [
+        f"note-map: {book.manuscript} is the manuscript itself; give the map another name"
+    ]
+    book.manuscript.unlink()
+    assert refused(book, capsys) == [f"note-map: {book.manuscript}: no such file"]
+
+
+def test_a_usage_error_exits_2_and_help_exits_0(capsys):
+    assert main(["--registry", "x"]) == 2
+    assert "usage: note-map" in capsys.readouterr().err
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("MANUSCRIPT.docx", "--registry", "--map", "--assign", "--dry-run"):
+        assert flag in out
+
+
+def test_a_document_with_no_notes_gives_an_empty_registry(tmp_path, capsys):
+    from tests.samples import W
+
+    book = Book(tmp_path)
+    book.save({"word/document.xml": f"<w:document {W}><w:body><w:p/></w:body></w:document>"})
+    assert book.run() == 0
+    assert capsys.readouterr().out == "0 notes: 0 carried, 0 new, 0 retired\n"
+    assert book.ids() == []

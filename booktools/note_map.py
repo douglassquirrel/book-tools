@@ -15,6 +15,7 @@ from booktools.notes import read_notes
 from booktools.registry import (
     AssignError,
     Registry,
+    RegistryError,
     dump_registry,
     load_registry,
     match,
@@ -38,11 +39,22 @@ def _run(args):
         raise Refusal(str(error)) from None
     with open(args.manuscript, "rb") as file:
         save = hashlib.sha256(file.read()).hexdigest()
+    for path, what in ((args.registry, "registry"), (args.map, "map")):
+        if path is None:
+            continue
+        if os.path.realpath(path) == os.path.realpath(args.manuscript):
+            raise Refusal(f"{path} is the manuscript itself; give the {what} another name")
+        folder = os.path.dirname(path) or "."
+        if not os.path.isdir(folder):
+            raise Refusal(f"the folder {folder} does not exist")
     registry, before = Registry(), None
     if os.path.exists(args.registry):
         with open(args.registry, encoding="utf-8") as file:
             before = file.read()
-        registry = load_registry(before)
+        try:
+            registry = load_registry(before)
+        except RegistryError as error:
+            raise Refusal(f"{args.registry} cannot be used: {error}") from None
     notes = read_notes(Manuscript(docx.texts()))
     assign, flags = _assignments(args.assign, notes)
     try:
@@ -69,21 +81,24 @@ def _run(args):
         return 1
     updated, ids = update(registry, matching, save)
     count = "1 note" if len(notes) == 1 else f"{len(notes)} notes"
-    print(
+    summary = (
         f"{count}: {len(matching.carried)} carried, {len(matching.new)} new,"
         f" {len(matching.retired)} retired"
     )
+    print(f"dry run: {summary}; nothing written" if args.dry_run else summary)
     for note in matching.new:
         print(f"new: {ids[note.place]} {note.place} {_short(note.text)}")
     for entry in matching.retired:
         print(f"retired: {entry.id} {_short(entry.text)}")
     retired = [entry.id for entry in updated.entries if entry.retired_in is not None]
     rows = map_rows(notes, ids, updated)
-    if args.map:
-        _write(args.map, map_markdown(rows, retired, os.path.basename(args.manuscript), save))
-    else:
+    if not args.map:
         for line in map_lines(rows, retired):
             print(line)
+    if args.dry_run:
+        return 0
+    if args.map:
+        _write(args.map, map_markdown(rows, retired, os.path.basename(args.manuscript), save))
     after = dump_registry(updated)
     if after != before:
         _write(args.registry, after)
@@ -142,6 +157,9 @@ def _parser():
     )
     parser.add_argument(
         "--map", metavar="FILE", help="write the map here as a Markdown table, not to the screen"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="report what would change and write nothing"
     )
     parser.add_argument(
         "--assign",
