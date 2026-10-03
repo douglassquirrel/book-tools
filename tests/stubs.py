@@ -1,0 +1,160 @@
+"""Stand-ins for the outside programs, put on a PATH of their own for one test.
+
+Each records the arguments it was given, one JSON object per line in `calls.jsonl`
+beside it, and behaves as `control.json` beside it says.
+"""
+
+import json
+import os
+import stat
+import sys
+
+BACKLOG = r'''
+import json, os, re, sys, time
+
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "control.json")) as file:
+    control = json.load(file)
+args = sys.argv[1:]
+with open(os.path.join(here, "calls.jsonl"), "a") as file:
+    file.write(json.dumps({"args": args, "cwd": os.getcwd()}) + "\n")
+
+state_path = os.path.join("backlog", "stub-state.json")
+state = {"creates": 0, "tasks": []}
+if os.path.exists(state_path):
+    with open(state_path) as file:
+        state = json.load(file)
+
+
+def save():
+    with open(state_path, "w") as file:
+        json.dump(state, file)
+
+
+def tidy(text):
+    return re.sub(r"\n{3,}", "\n\n", text.replace("\r\n", "\n")).strip()
+
+
+def option(names):
+    for name in names:
+        if name in args:
+            return args[args.index(name) + 1]
+    return None
+
+
+def find(id):
+    for task in state["tasks"]:
+        if task["id"].lower() == id.lower():
+            return task
+    print(f"Task {id} not found.", file=sys.stderr)
+    sys.exit(1)
+
+
+if not os.path.exists(os.path.join("backlog", "config.yml")):
+    print("No Backlog.md project found. Run `backlog init` to initialize.")
+    sys.exit(0)
+
+if args[:3] == ["task", "view", "--help"]:
+    print("Options:\n  --plain" + ("" if control.get("no_json") else "\n  --json"))
+elif args[:2] == ["task", "create"]:
+    state["creates"] += 1
+    attempt = state["creates"]
+    save()
+    if attempt == control.get("hang_on_create"):
+        time.sleep(60)
+    if attempt in control.get("fail_create", []):
+        print("Invalid status: Nonsense. Valid statuses are: To Do, In Progress, Done")
+        sys.exit(1)
+    number = len(state["tasks"]) + 1 + control.get("ids_start_after", 0)
+    description = option(["-d", "--description"])
+    if attempt == control.get("mangle_create"):
+        description = description.replace("$", "")  # what a shell would have done
+    labels = option(["-l", "--labels"])
+    state["tasks"].append({
+        "id": f"TASK-{number}",
+        "title": args[args.index("--") + 1],
+        "description": tidy(description) if description is not None else None,
+        "status": option(["-s", "--status"]) or "To Do",
+        "priority": (option(["--priority"]) or "").lower() or None,
+        "labels": labels.split(",") if labels else [],
+        "milestone": option(["-m", "--milestone"]),
+        "comments": [],
+    })
+    save()
+    if control.get("leave_lock"):
+        os.makedirs(os.path.join("backlog", ".locks", f"task-{number}"), exist_ok=True)
+    if attempt == control.get("silent_create"):
+        sys.exit(0)
+    if attempt == control.get("garbage_create"):
+        print("\x00\x01 unexpected")
+        sys.exit(0)
+    print(f"Created task TASK-{number}\nFile: {os.getcwd()}/backlog/tasks/task-{number}.md")
+elif args[:2] == ["task", "edit"]:
+    task = find(args[2])
+    if control.get("fail_comment"):
+        print("Could not update task", file=sys.stderr)
+        sys.exit(1)
+    task["comments"].append({
+        "index": len(task["comments"]) + 1,
+        "body": tidy(option(["--comment"])),
+        "author": option(["--comment-author"]),
+        "createdAt": "2026-10-03T15:36:00Z",
+    })
+    save()
+    print(f"Updated task {task['id']}")
+elif args[:2] == ["task", "view"]:
+    task = find(args[2])
+    if control.get("garbage_view"):
+        print("not json at all")
+    else:
+        print(json.dumps({"schemaVersion": 1, "kind": "task-view", "task": task}))
+elif args[:2] == ["task", "list"]:
+    print(json.dumps({"schemaVersion": 1, "kind": "task-list", "tasks": state["tasks"]}))
+else:
+    print("stub backlog: unexpected arguments", args, file=sys.stderr)
+    sys.exit(64)
+'''
+
+
+class Stub:
+    """A stand-in program in a folder of its own, to be put on PATH."""
+
+    def __init__(self, folder, name, source, **control):
+        self.folder = folder
+        folder.mkdir(exist_ok=True)
+        program = folder / name
+        program.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
+        program.chmod(program.stat().st_mode | stat.S_IXUSR)
+        self.control(**control)
+
+    def control(self, **control):
+        """Set how the stand-in behaves from now on."""
+        (self.folder / "control.json").write_text(json.dumps(control), encoding="utf-8")
+
+    def calls(self):
+        """The argument lists it has been run with, in order."""
+        log = self.folder / "calls.jsonl"
+        if not log.exists():
+            return []
+        return [json.loads(line)["args"] for line in log.read_text(encoding="utf-8").splitlines()]
+
+    def folders(self):
+        """The working directory of each run, in order."""
+        log = self.folder / "calls.jsonl"
+        return [json.loads(line)["cwd"] for line in log.read_text(encoding="utf-8").splitlines()]
+
+
+def backlog_stub(folder, **control):
+    return Stub(folder, "backlog", BACKLOG, **control)
+
+
+def backlog_project(folder):
+    """An empty Backlog project, as far as file-tickets can tell."""
+    (folder / "backlog").mkdir(parents=True)
+    (folder / "backlog" / "config.yml").write_text('project_name: "Stub"\n', encoding="utf-8")
+    return folder
+
+
+def only(*stubs):
+    """A PATH holding these stand-ins and nothing else."""
+    return os.pathsep.join(str(stub.folder) for stub in stubs)
