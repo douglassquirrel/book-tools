@@ -84,3 +84,68 @@ def test_an_occurrence_beyond_the_last_match_is_an_error():
 def test_every_problem_is_reported_not_just_the_first():
     edits = [edit(1, "dog", "cat"), edit(2, "the cat", "a cat"), edit(3, "the", "a")]
     assert len(problems(edits, Manuscript(TWO))) == 2
+
+
+def marker(kind, id):
+    return f'<w:p><w:r><w:t>text</w:t></w:r><w:r><w:{kind}Reference w:id="{id}"/></w:r></w:p>'
+
+
+NOTED = {
+    BODY: "<w:document><w:body>"
+    + p("the body says the word")
+    + marker("endnote", 2)
+    + marker("endnote", 1)
+    + marker("footnote", 1)
+    + "</w:body></w:document>",
+    ENDNOTES: '<w:endnotes><w:endnote w:id="1">'
+    + p("the second note")
+    + '</w:endnote><w:endnote w:id="2">'
+    + p("the first note")
+    + "</w:endnote></w:endnotes>",
+    FOOTNOTES: '<w:footnotes><w:footnote w:id="1">' + p("the footnote") + "</w:footnote></w:footnotes>",
+}
+
+
+def placed(edits, parts=NOTED):
+    return [
+        (l.target.place, l.target.part, l.target.number, l.start)
+        for l in plan(edits, Manuscript(parts), highest_id=0)
+    ]
+
+
+def test_where_names_one_note_by_its_position_in_the_document():
+    assert placed([edit(1, "the", "a", where=("endnote", 1))]) == [("endnote:1", ENDNOTES, 2, 0)]
+    assert placed([edit(1, "the", "a", where=("endnote", 2))]) == [("endnote:2", ENDNOTES, 1, 0)]
+    assert placed([edit(1, "the", "a", where=("footnote", 1))]) == [("footnote:1", FOOTNOTES, 1, 0)]
+
+
+def test_where_all_searches_the_body_then_the_endnotes_then_the_footnotes():
+    assert placed([edit(1, "note", "N", where=("all",), occurrence=n) for n in (3, 1, 2)]) == [
+        ("endnote:1", ENDNOTES, 2, 10),
+        ("endnote:2", ENDNOTES, 1, 11),
+        ("footnote:1", FOOTNOTES, 1, 8),
+    ]
+    assert problems([edit(1, "nothing", "x", where=("all",))], Manuscript(NOTED)) == [
+        'edit 1: "find" text not found in the body or the notes'
+    ]
+
+
+def test_the_body_alone_is_searched_by_default_and_a_note_alone_when_named():
+    assert problems([edit(1, "second note", "x")], Manuscript(NOTED)) == [
+        'edit 1: "find" text not found in the body'
+    ]
+    assert problems([edit(1, "body", "x", where=("endnote", 1))], Manuscript(NOTED)) == [
+        'edit 1: "find" text not found in endnote:1'
+    ]
+
+
+def test_a_note_that_does_not_exist_is_an_error():
+    assert problems([edit(1, "the", "a", where=("endnote", 3))], Manuscript(NOTED)) == [
+        "edit 1: there is no endnote:3 (the document has 2 endnotes)"
+    ]
+    assert problems([edit(1, "the", "a", where=("footnote", 2))], Manuscript(NOTED)) == [
+        "edit 1: there is no footnote:2 (the document has 1 footnote)"
+    ]
+    assert problems([edit(1, "the", "a", where=("footnote", 1))], Manuscript(TWO)) == [
+        "edit 1: there is no footnote:1 (the document has no footnotes)"
+    ]

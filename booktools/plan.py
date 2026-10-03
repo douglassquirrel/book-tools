@@ -44,7 +44,10 @@ def plan(edits, manuscript, highest_id):
     located = []
     problems = []
     for edit in edits:
-        space, where = manuscript.body, "the body"
+        space, where = _space(edit, manuscript)
+        if space is None:
+            problems.append(f"{edit.name}: {where}")
+            continue
         matches = [
             (target, start, end) for target in space for start, end in read(target).find(edit.find)
         ]
@@ -60,7 +63,14 @@ def plan(edits, manuscript, highest_id):
         located.append(Located(edit, target, start, end, change))
     if problems:
         raise PlanError(problems)
-    located.sort(key=lambda found: (ORDER[found.target.part], found.target.start, found.start))
+    located.sort(
+        key=lambda found: (
+            ORDER[found.target.part],
+            found.target.note,
+            found.target.start,
+            found.start,
+        )
+    )
     for found in located:
         change = found.change
         if change.start < change.end:
@@ -70,6 +80,26 @@ def plan(edits, manuscript, highest_id):
             highest_id += 1
             change.ins_id = highest_id
     return located
+
+
+def _space(edit, manuscript):
+    """The paragraphs to search for `edit` and what to call them; (None, why) if none."""
+    kind = edit.where[0]
+    if kind == "body":
+        return manuscript.body, "the body"
+    notes = {"endnote": manuscript.endnotes, "footnote": manuscript.footnotes}
+    if kind == "all":
+        space = list(manuscript.body)
+        for note in manuscript.endnotes + manuscript.footnotes:
+            space.extend(note)
+        return space, "the body or the notes"
+    number = edit.where[1]
+    if number > len(notes[kind]):
+        count = len(notes[kind])
+        has = "no" if count == 0 else str(count)
+        plural = "" if count == 1 else "s"
+        return None, f"there is no {kind}:{number} (the document has {has} {kind}{plural})"
+    return notes[kind][number - 1], f"{kind}:{number}"
 
 
 def _unusable(edit, matches, where):

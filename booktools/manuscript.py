@@ -18,6 +18,7 @@ class Target:
         self.start = start  # offsets in the part's XML
         self.end = end
         self.place = place  # "body", "endnote:42" or "footnote:3"
+        self.note = int(place.partition(":")[2] or 0)  # 42, 3; 0 for the body
 
 
 class Manuscript:
