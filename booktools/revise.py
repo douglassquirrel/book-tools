@@ -29,6 +29,8 @@ def revise(paragraph, change, stamp):
     `stamp` is the author and date attributes every revision carries.
     """
     xml = paragraph.xml
+    if change.start == change.end:
+        return _insert(paragraph, change, stamp)
     first, k1 = _piece_holding(paragraph, change.start)
     last, k2 = _piece_holding(paragraph, change.end - 1)
     k2 += 1
@@ -59,6 +61,25 @@ def revise(paragraph, change, stamp):
         + right
         + xml[tail.end :]
     )
+
+def _insert(paragraph, change, stamp):
+    """A pure insertion: nothing is deleted, and at most one run is cut in two."""
+    xml = paragraph.xml
+    if change.after:
+        piece, k = _piece_holding(paragraph, change.start - 1)
+        k += 1
+    else:
+        piece, k = _piece_holding(paragraph, change.start)
+    run = piece.run
+    inserted = _inserted(xml, run, change, stamp)
+    if k == 0:
+        return xml[: run.start] + inserted + xml[run.start :]
+    if k == len(piece.units):
+        return xml[: run.end] + inserted + xml[run.end :]
+    left = xml[run.start : piece.t.start] + _text(piece.units[:k]) + "</w:r>"
+    right = _shell(xml, run) + _text(piece.units[k:]) + xml[piece.t.end : run.end]
+    return xml[: run.start] + left + inserted + right + xml[run.end :]
+
 
 def _inserted(xml, run, change, stamp):
     """The new text as a tracked insertion formatted as `run` is, or nothing."""

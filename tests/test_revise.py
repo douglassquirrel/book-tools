@@ -98,3 +98,36 @@ def test_a_pure_deletion_writes_no_insertion():
         + '<w:r><w:delText xml:space="preserve">big </w:delText></w:r></w:del>'
         "<w:r><w:t>cat</w:t></w:r></w:p>"
     )
+
+
+def test_a_pure_insertion_goes_after_the_character_before_it():
+    xml = "<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r><w:r><w:t> sat</w:t></w:r></w:p>"
+    inserted = INS + '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">big </w:t></w:r></w:ins>'
+    # In the middle of a run: the run is cut in two around the insertion.
+    assert revise(Paragraph(xml), Change(4, 4, "big ", ins_id=8), STAMP) == (
+        '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">The </w:t></w:r>'
+        + inserted
+        + "<w:r><w:rPr><w:i/></w:rPr><w:t>cat</w:t></w:r><w:r><w:t> sat</w:t></w:r></w:p>"
+    )
+    # At the end of a run: nothing is cut, and the formatting is that run's.
+    assert revise(Paragraph(xml), Change(7, 7, "big ", ins_id=8), STAMP) == (
+        "<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r>"
+        + inserted
+        + "<w:r><w:t> sat</w:t></w:r></w:p>"
+    )
+
+
+def test_a_pure_insertion_can_go_before_the_character_after_it():
+    xml = "<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r><w:r><w:t> sat</w:t></w:r></w:p>"
+    plain = INS + "<w:r><w:t>,</w:t></w:r></w:ins>"
+    assert revise(Paragraph(xml), Change(7, 7, ",", ins_id=8, after=False), STAMP) == (
+        "<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r>"
+        + plain
+        + "<w:r><w:t> sat</w:t></w:r></w:p>"
+    )
+    assert revise(Paragraph(xml), Change(0, 0, "Oh. ", ins_id=8, after=False), STAMP) == (
+        "<w:p>"
+        + INS
+        + '<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">Oh. </w:t></w:r></w:ins>'
+        + "<w:r><w:rPr><w:i/></w:rPr><w:t>The cat</w:t></w:r><w:r><w:t> sat</w:t></w:r></w:p>"
+    )
