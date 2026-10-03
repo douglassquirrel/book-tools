@@ -413,3 +413,79 @@ def test_a_failure_part_way_through_a_pdf_keeps_the_pages_done_for_the_next_run(
     assert sources.run("--no-rotate") == 0
     assert capsys.readouterr().out.splitlines()[0] == "scan.pdf: 3 pages, 3 read by OCR, 0 turned"
     assert sources.made() == [".convert-log.txt", "scan.pdf.txt"]
+
+
+def test_refuses_to_start_when_a_needed_program_is_missing_and_names_it(sources, capsys, monkeypatch, tmp_path):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    sources.add("paper.pdf", pdf([LONG]))
+    sources.add("book.epub", "x")
+    monkeypatch.setenv("PATH", str(empty))
+    assert sources.run() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines()[-1] == (
+        "sources-to-text: not found: pdftotext, pdftoppm, tesseract, pandoc."
+        " Install them with: brew install poppler tesseract pandoc"
+        " (pdftotext and pdftoppm come with poppler)"
+    )
+    assert not sources.out.exists()
+    monkeypatch.setenv("PATH", only(sources.tools))  # everything but pandoc
+    assert sources.run() == 2
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        "sources-to-text: not found: pandoc. Install it with: brew install pandoc"
+    )
+
+
+def test_a_program_is_needed_only_if_a_file_waiting_needs_it(sources, capsys, monkeypatch, tmp_path):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    sources.add("notes.md", "Only a note.")
+    monkeypatch.setenv("PATH", str(empty))
+    assert sources.run() == 0
+    assert capsys.readouterr().out.splitlines()[0] == "notes.md: copied"
+
+
+def test_refusals_and_help(sources, capsys, tmp_path):
+    assert main([str(tmp_path / "no-such-folder")]) == 2
+    assert capsys.readouterr().err.splitlines() == [
+        f"sources-to-text: {tmp_path / 'no-such-folder'} is not a folder"
+    ]
+    a_file = tmp_path / "a-file"
+    a_file.write_text("x")
+    assert sources.run("--out", str(a_file)) == 2
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        f"sources-to-text: --out {a_file} is a file, not a folder"
+    )
+    assert sources.run("--workers", "0") == 2
+    assert capsys.readouterr().err.splitlines()[-1] == "sources-to-text: --workers must be 1 or more"
+    assert main([]) == 2
+    assert "usage: sources-to-text" in capsys.readouterr().err
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("SOURCES_DIR", "--out", "--workers", "--seconds", "--min-chars", "--dpi-scale",
+                 "--no-rotate", "--redo", "--skip", "--clear-locks", "--tmp", "--timeout",
+                 "--ocr-timeout"):
+        assert flag in out
+    assert "--worker-report" not in out
+
+
+def test_an_interrupted_run_leaves_no_lock_no_part_written_text_and_no_scratch(
+    sources, capsys, monkeypatch
+):
+    import booktools.sources_to_text as command
+
+    sources.add("one.pdf", pdf([LONG]))
+
+    def interrupt(self, name, data):
+        with open(self.target(name) + ".partial", "wb") as file:
+            file.write(b"half")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(command.Job, "write", interrupt)
+    assert sources.run() == 130
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        "sources-to-text: interrupted; run again to go on from where it stopped"
+    )
+    assert sources.made() == []
+    assert list(sources.scratch.iterdir()) == []

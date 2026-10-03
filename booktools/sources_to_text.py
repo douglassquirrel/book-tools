@@ -4,6 +4,7 @@ import argparse
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ def main(argv=None, clock=None, image=None):
         _parser(),
         lambda args: _run(args, clock or time.monotonic, image, given),
         argv,
+        interrupted="interrupted; run again to go on from where it stopped",
     )
 
 
@@ -44,9 +46,16 @@ def _run(args, clock, image, given):
     if not os.path.isdir(folder):
         raise Refusal(f"{folder} is not a folder")
     out = args.out or os.path.join(folder, "text")
+    if os.path.exists(out) and not os.path.isdir(out):
+        raise Refusal(f"--out {out} is a file, not a folder")
+    if args.workers < 1:
+        raise Refusal("--workers must be 1 or more")
     for name in args.redo:
         if not os.path.isfile(os.path.join(folder, name)):
             raise Refusal(f"--redo {name}: there is no such file in {folder}")
+    names = [name for name in _sources(folder) if name not in args.skip]
+    waiting = [name for name in names if not os.path.exists(os.path.join(out, name + ".txt"))]
+    _need_programs(args.redo or waiting)
     os.makedirs(out, exist_ok=True)
     worker = args.worker_report is not None  # one of several processes of a larger run
     if args.clear_locks and not worker:
@@ -71,8 +80,6 @@ def _run(args, clock, image, given):
     deadline = clock() + args.seconds if args.seconds is not None else None
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         job = Job(folder, out, scratch, args, image, clock, deadline)
-        names = [name for name in _sources(folder) if name not in args.skip]
-        waiting = [name for name in names if not os.path.exists(job.target(name))]
         if args.workers > 1 and not worker:
             tally = _workers(args.workers, given, scratch)
         else:
@@ -102,6 +109,27 @@ def _run(args, clock, image, given):
             file=sys.stderr,
         )
     return 1 if tally["failed"] or locked else 0
+
+
+def _need_programs(names):
+    """Refuse to start if a program that one of these files needs is not installed."""
+    kinds = {name.rsplit(".", 1)[-1].lower() for name in names if "." in name}
+    needed = []
+    if "pdf" in kinds:
+        needed += ["pdftotext", "pdftoppm", "tesseract"]
+    if "epub" in kinds:
+        needed.append("pandoc")
+    missing = [program for program in needed if shutil.which(program) is None]
+    if not missing:
+        return
+    packages = []
+    if "pdftotext" in missing or "pdftoppm" in missing:
+        packages.append("poppler")
+    packages += [program for program in ("tesseract", "pandoc") if program in missing]
+    advice = f"Install {'it' if len(missing) == 1 else 'them'} with: brew install {' '.join(packages)}"
+    if "poppler" in packages:
+        advice += " (pdftotext and pdftoppm come with poppler)"
+    raise Refusal(f"not found: {', '.join(missing)}. {advice}")
 
 
 def _redo(job):
@@ -167,6 +195,10 @@ def _work(job, waiting):
             print(f"{name}: {outcome}", flush=True)
             tally["skipped" if outcome.startswith("skipped") else "converted"].append(name)
         finally:
+            # Whatever happened, leave no lock and nothing half written behind.
+            for partial in (job.target(name) + ".partial", job.cache(name) + ".partial"):
+                if os.path.exists(partial):
+                    os.remove(partial)
             os.rmdir(lock)
     return tally
 
