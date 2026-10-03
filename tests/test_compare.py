@@ -127,3 +127,54 @@ def test_properties_and_text_both_changed_count_as_two():
         ],
         2,
     )
+
+
+def part(*texts):
+    return "<w:body>" + "".join(f"<w:p><w:r><w:t>{t}</w:t></w:r></w:p>" for t in texts) + "</w:body>"
+
+
+def report(old, new, **more):
+    from booktools.compare import compare_part
+
+    return compare_part("word/document.xml", old, new, **more)
+
+
+def test_a_part_that_is_the_same_has_only_its_header_and_a_count_of_nothing():
+    assert report(part(A, B), part(A, B)) == [
+        "===== word/document.xml paragraphs 2 2",
+        "differing paragraphs 0",
+    ]
+
+
+def test_added_and_removed_paragraphs_are_named_and_later_ones_compared_in_step():
+    old = part(A, B, C, "Gone for good, this one, and unlike the rest.")
+    new = part(A, X, B_EDITED, C)
+    assert report(old, new) == [
+        "===== word/document.xml paragraphs 4 4",
+        "ADDED 1: 'A paragraph added in the later save, about nothing above.'",
+        "TEXT 2 (old 1): insert 'She wrote every figure in a large ledger'"
+        " -> 'She wrote every single figure in a large ledger'",
+        "REMOVED 3: 'Gone for good, this one, and unlike the rest.'",
+        "differing paragraphs 3",
+    ]
+
+
+def test_a_long_added_paragraph_is_shown_by_its_first_60_characters():
+    long = "0123456789" * 7
+    assert report(part(A), part(A, long))[1] == f"ADDED 1: '{long[:60]}'"
+
+
+def test_a_part_one_save_lacks_is_all_added_or_all_removed():
+    assert report("", part(A)) == [
+        "===== word/document.xml paragraphs 0 1",
+        f"ADDED 0: '{A[:60]}'",
+        "differing paragraphs 1",
+    ]
+    assert report(part(A), "")[1] == f"REMOVED 0: '{A[:60]}'"
+
+
+def test_the_fonts_to_ignore_reach_the_comparison_of_each_pair():
+    old = '<w:p><w:r><w:rPr><w:rFonts w:ascii="Times-Roman"/></w:rPr><w:t>Cap.</w:t></w:r></w:p>'
+    new = "<w:p><w:r><w:t>Cap.</w:t></w:r></w:p>"
+    assert report(old, new, ignore_fonts=["Times-Roman"])[1].startswith("FONT-NAME-ONLY 0: 4 chars")
+    assert report(old, new)[1].startswith("FORMAT 0: 4 chars")

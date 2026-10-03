@@ -2,6 +2,7 @@
 
 import difflib
 
+from booktools.formats import paragraphs
 from booktools.text import likeness
 
 # Found by experiment on invented saves (word-by-word likeness): a paragraph with a word
@@ -117,3 +118,27 @@ def _without(signature, fonts):
     """A formatting signature with the font names in `fonts` left out."""
     ignored = {f"font={font}" for font in fonts}
     return ",".join(part for part in signature.split(",") if part not in ignored)
+
+
+def compare_part(name, old_xml, new_xml, ignore_fonts=()):
+    """The report lines for one part (the body, the endnotes or the footnotes) of two
+    saves; `old_xml` or `new_xml` is "" when that save has no such part."""
+    old, new = paragraphs(old_xml), paragraphs(new_xml)
+    old_texts = ["".join(char for char, _ in chars) for _, chars in old]
+    new_texts = ["".join(char for char, _ in chars) for _, chars in new]
+    lines = [f"===== {name} paragraphs {len(old)} {len(new)}"]
+    differing = 0
+    for i, j in pair(old_texts, new_texts):
+        if i is None:
+            differing += 1
+            lines.append(f"ADDED {j}: {new_texts[j][:60]!r}")
+        elif j is None:
+            differing += 1
+            lines.append(f"REMOVED {i}: {old_texts[i][:60]!r}")
+        else:
+            label = str(j) if i == j else f"{j} (old {i})"
+            found, count = differences(label, old[i], new[j], ignore_fonts)
+            lines.extend(found)
+            differing += count
+    lines.append(f"differing paragraphs {differing}")
+    return lines
