@@ -107,15 +107,11 @@ differing paragraphs 0
 == Text diff (body and notes, as pandoc reads them)
 === BODY replace
   OLD: The lamp was lit at dusk, and the keeper isn’t one to waste oil.[^1]
-  NEW: [^1]The lamp was lit at dawn, and the keeper isn’t one to waste oil.[^2]
-=== BODY replace
   OLD: She wrote *every* figure in a **large** ledger.[^2]
+  NEW: [^1]The lamp was lit at dawn, and the keeper isn’t one to waste oil.[^2]
   NEW: She wrote *every* figure in a large ledger.[^3]
 === BODY insert
   NEW: A paragraph added in the later save.
-  NEW: 
-=== BODY insert
-  NEW: 
 === NOTES insert old [] new [1]
   NEW: A note added in the later save.
 ```
@@ -392,10 +388,10 @@ through a chain of styles that cannot be seen. This follows the chain.
    by spacing: [('exact 14 pt', 1)]
    by style: [('Normal', 1)]
    TEXT p7 [Chapter 1] Normal | exact 14 pt | 'A line at exact spacing.'
-== NOTES: 4 paragraphs, 4 double, 0 not double
+== NOTES: 2 paragraphs, 2 double, 0 not double
    by spacing: []
    by style: []
-== FOOTNOTES: 3 paragraphs, 3 double, 0 not double
+== FOOTNOTES: 1 paragraphs, 1 double, 0 not double
    by spacing: []
    by style: []
 ```
@@ -404,6 +400,8 @@ through a chain of styles that cannot be seen. This follows the chain.
 listed: its number (from 1), the heading above it, its style, its spacing, `[IMG]` if it
 holds a picture, and its first 90 characters. A spacing of "exactly" or "at least" so many
 points never counts as matching. A paragraph with no spacing set anywhere counts as single.
+The separator entries Word keeps among the notes are not counted: they are not paragraphs
+of the book.
 
 The exit code is 1 if any paragraph does not match, 0 if all do.
 
@@ -618,11 +616,7 @@ read-only on your book folder; write only into a scratch folder.
 - **`compare-saves`** shows a moved paragraph as one removed and one added, and a paragraph
   split or joined as one changed and one added or removed; among identical paragraphs the
   pairing is by order. An empty paragraph is not counted, and of a paragraph holding a text
-  box only the box's own paragraphs are compared. In the text diff, a note added or removed
-  also shows as a blank body line inserted or deleted.
-- **`check-spacing`** counts the two separator entries Word keeps in the notes as
-  paragraphs. They are single spaced, so a manuscript with endnotes reports them as not
-  double and exits 1.
+  box only the box's own paragraphs are compared.
 - **`note-map`** recognises a note by its text and its sentence. Its rule for finding
   sentences is simple and can be fooled by unusual punctuation; what matters is that it
   gives the same answer for the same text at every save.
@@ -649,6 +643,12 @@ know. The first version of each command was built on 3 October 2026.
   `--expect`, and exits 1 when any paragraph does not match.
 - 3 October 2026: `sources-to-text` copies `.txt` sources as well as `.md`; a program that
   fails now fails the file, with the reason, instead of writing an empty page.
+- 3 October 2026: `check-spacing` no longer counts the separator entries Word keeps among
+  the notes (two fewer paragraphs under `NOTES` than before, and no `FOOTNOTES` block for
+  a book without footnotes), so a manuscript double spaced throughout now exits 0.
+- 3 October 2026: in `compare-saves`, a small change in a long paragraph is one short
+  `TEXT` line (it could be several lines of unrelated text), and the text diff no longer
+  reports the blank line that comes and goes with a note.
 - 3 October 2026: page turning in `sources-to-text` was checked with the real Pillow
   (12.3.0) and Tesseract (5.5.3): pages scanned sideways and upside down are found and
   read. On a map whose labels run in every direction the choice of turn is a toss-up.
