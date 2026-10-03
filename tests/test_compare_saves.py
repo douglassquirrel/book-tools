@@ -161,3 +161,67 @@ def test_no_counts_leaves_the_structure_section_out(saves, capsys):
 def test_utc_shows_the_modified_times_in_utc(saves, capsys):
     assert saves.compare("--utc") == 0
     assert "modified (UTC): 2026-10-01 09:00 | 2026-10-02 17:30" in capsys.readouterr().out
+
+
+def test_refuses_to_start_without_pandoc_and_says_how_to_get_it(saves, capsys, monkeypatch, tmp_path):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert saves.compare() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines() == [
+        "compare-saves: pandoc was not found; the text diff needs it. Install it with"
+        " `brew install pandoc`, or on a Mac without Homebrew with the installer package"
+        " from pandoc.org; or leave the text diff out with --no-text-diff"
+    ]
+
+
+@pytest.mark.parametrize(
+    "fault, said",
+    [
+        ("fail", "pandoc failed on {old}: pandoc: could not read the file"),
+        ("silent", "pandoc printed nothing for {old}"),
+        ("garbage", "pandoc did not print text for {old}"),
+        ("hang", "pandoc did not finish with {old} within 2 seconds"),
+    ],
+)
+def test_a_pandoc_that_fails_still_gives_the_other_sections_and_exits_1(
+    saves, capsys, fault, said
+):
+    saves.pandoc.control(**{fault: True})
+    assert saves.compare("--timeout", "2") == 1
+    captured = capsys.readouterr()
+    out = captured.out.splitlines()
+    assert out[-1] == "== Text diff (body and notes, as pandoc reads them)"
+    assert "differing paragraphs 5" in out
+    assert captured.err.splitlines() == [
+        "compare-saves: no text diff: " + said.format(old=saves.old)
+    ]
+
+
+def test_a_save_that_cannot_be_read_exits_1(saves, capsys):
+    saves.new.write_text("not a zip")
+    assert saves.compare() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines() == [
+        f"compare-saves: {saves.new}: not a .docx file (it is not a zip archive)"
+    ]
+    assert saves.run(str(saves.old), str(saves.folder / "none.docx")) == 1
+    assert capsys.readouterr().err.splitlines() == [
+        f"compare-saves: {saves.folder / 'none.docx'}: no such file"
+    ]
+
+
+def test_a_usage_error_exits_2_and_help_exits_0(saves, capsys):
+    assert saves.run(str(saves.old)) == 2
+    assert capsys.readouterr().err.splitlines() == [
+        "compare-saves: give two saves, OLD.docx NEW.docx (or --git OLDREV [NEWREV] FILE.docx)"
+    ]
+    assert main(["--nonsense"]) == 2
+    assert "usage: compare-saves" in capsys.readouterr().err
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("--git", "--ignore-font", "--no-text-diff", "--no-counts", "--utc", "--tmp", "--timeout"):
+        assert flag in out
