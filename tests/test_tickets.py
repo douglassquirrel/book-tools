@@ -83,3 +83,55 @@ def test_every_fault_in_a_ticket_is_named():
         'ticket 1 (T): "milestone" must be text and not empty',
         'ticket 1 (T): "status" must be text and not empty',
     ]
+
+
+def test_the_create_command_passes_each_field_as_one_argument_with_the_title_last():
+    from booktools.tickets import create_command
+
+    (ticket,) = parse_tickets(json.dumps([FULL]))
+    assert create_command(ticket) == [
+        "backlog", "task", "create",
+        "-d", "## Current state\n\n**Book now says:** 12 pints",
+        "--priority", "medium",
+        "-l", "ch3,fact-check-2",
+        "-m", "First feedback",
+        "-s", "To Do",
+        "--", "Ch. 3: Table 3.1 row 4 cites the 2019 figure",
+    ]
+
+
+def test_fields_not_given_are_left_out_of_the_command():
+    from booktools.tickets import create_command
+
+    (ticket,) = parse_tickets('[{"title": "-5 degrees"}]')
+    assert create_command(ticket) == ["backlog", "task", "create", "--", "-5 degrees"]
+
+
+def test_awkward_characters_reach_the_command_untouched():
+    from booktools.tickets import create_command
+
+    nasty = 'He said "no" & `ran` $(rm -rf ~) \'x\' \\ \n\ttab \U0001f600'
+    (ticket,) = parse_tickets(json.dumps([{"title": "T", "description": nasty}]))
+    assert create_command(ticket)[4] == nasty
+
+
+def test_comment_and_view_commands():
+    from booktools.tickets import comment_command, view_command
+
+    assert comment_command("TASK-7", "Claude", "Source: the log") == [
+        "backlog", "task", "edit", "TASK-7", "--comment", "Source: the log",
+        "--comment-author", "Claude",
+    ]
+    assert comment_command("TASK-7", None, "-x") == [
+        "backlog", "task", "edit", "TASK-7", "--comment", "-x",
+    ]
+    assert view_command("TASK-7") == ["backlog", "task", "view", "TASK-7", "--json"]
+
+
+def test_reads_the_new_id_from_what_create_printed():
+    from booktools.tickets import created_id
+
+    assert created_id("Created task TASK-408\nFile: /x/backlog/tasks/task-408 - T.md\n") == "TASK-408"
+    assert created_id("Created task FC-12") == "FC-12"
+    assert created_id("No Backlog.md project found. Run `backlog init` to initialize.\n") is None
+    assert created_id("") is None

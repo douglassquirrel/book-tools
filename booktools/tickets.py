@@ -2,6 +2,7 @@
 command, and checking what came back."""
 
 import json
+import re
 
 KEYS = ("title", "description", "priority", "labels", "milestone", "status", "comments")
 
@@ -104,3 +105,40 @@ def _is_comment(value):
         and isinstance(value.get("author", ""), str)
         and set(value) <= {"text", "author"}
     )
+
+
+def create_command(ticket):
+    """The `backlog` command, as an argument list, that creates `ticket`.
+
+    Options come first and the title last, after "--", so that a title or a
+    description beginning with a dash is not taken for an option.
+    """
+    command = ["backlog", "task", "create"]
+    if ticket.description is not None:
+        command += ["-d", ticket.description]
+    if ticket.priority:
+        command += ["--priority", ticket.priority]
+    if ticket.labels:
+        command += ["-l", ",".join(ticket.labels)]
+    if ticket.milestone:
+        command += ["-m", ticket.milestone]
+    if ticket.status:
+        command += ["-s", ticket.status]
+    return command + ["--", ticket.title]
+
+
+def comment_command(id, author, text):
+    """The command that adds one comment to the ticket with this id."""
+    command = ["backlog", "task", "edit", id, "--comment", text]
+    return command + ["--comment-author", author] if author else command
+
+
+def view_command(id):
+    """The command that reads the ticket back as JSON."""
+    return ["backlog", "task", "view", id, "--json"]
+
+
+def created_id(output):
+    """The id of the ticket `backlog task create` said it made, or None."""
+    found = re.search(r"^Created task (\S+)", output, re.M)
+    return found.group(1) if found else None
