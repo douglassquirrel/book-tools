@@ -4,6 +4,7 @@ from collections import Counter
 from xml.etree import ElementTree
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+SEPARATORS = ("separator", "continuationSeparator", "continuationNotice")
 TOLERANCE = 12  # 240ths of a line either side of the expected spacing
 
 
@@ -79,9 +80,19 @@ def measure(part_xml, styles, expect=480, in_body=False):
     whether it holds a drawing)."""
     root = ElementTree.fromstring(part_xml.encode("utf-8"))
     within = root.find(W + "body") if in_body else root
+    # Word keeps separator entries among the notes. They are not paragraphs of the
+    # book, so they are numbered but not measured.
+    apart = {
+        id(paragraph)
+        for entry in within
+        if entry.get(W + "type") in SEPARATORS
+        for paragraph in entry.iter(W + "p")
+    }
     heading = "(start)"
     rows = []
     for number, paragraph in enumerate(within.iter(W + "p"), 1):
+        if id(paragraph) in apart:
+            continue
         properties = paragraph.find(W + "pPr")
         style = properties.find(W + "pStyle") if properties is not None else None
         style_id = style.get(W + "val") if style is not None else styles.default

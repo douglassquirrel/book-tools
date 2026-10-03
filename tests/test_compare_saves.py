@@ -90,9 +90,6 @@ WORDS = [
     "  NEW: [^1]The lamp was lit at dawn, and the keeper isn’t one to waste oil.[^2]",
     "=== BODY insert",
     "  NEW: A paragraph added in the later save.",
-    "  NEW: ",
-    "=== BODY insert",
-    "  NEW: ",
     "=== NOTES insert old [] new [1]",
     "  NEW: A note added in the later save.",
 ]

@@ -38,14 +38,10 @@ She wrote every figure.[^3]
 
 def test_renumbering_alone_is_not_a_change():
     # Only the added line and the added note are reported; the two notes that were
-    # renumbered are not. (The blank line that came with the new note shows as a
-    # body line of its own, as it did in the script this was ported from.)
+    # renumbered are not, and nor are the blank lines that came with the new ones.
     assert text_diff(OLD, RENUMBERED) == [
         "=== BODY insert",
-        "  NEW: ",
         "  NEW: A new opening line.[^1]",
-        "=== BODY insert",
-        "  NEW: ",
         "=== NOTES insert old [] new [1]",
         "  NEW: A new first note.",
     ]
@@ -68,9 +64,6 @@ def test_a_removed_line_and_a_removed_note():
     assert text_diff(OLD, new) == [
         "=== BODY delete",
         "  OLD: She wrote every figure.[^2]",
-        "=== BODY delete",
-        "  OLD: ",
-        "  OLD: ",
         "=== NOTES delete old [2] new []",
         "  OLD: Ibid.",
     ]

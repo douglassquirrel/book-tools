@@ -21,13 +21,13 @@ TEXT_EACH = [
     " 'At least 24 points.'",
 ]
 NOTES = [
-    "== NOTES: 4 paragraphs, 3 double, 1 not double",
+    "== NOTES: 2 paragraphs, 1 double, 1 not double",
     "   by spacing: [('1 lines', 1)]",
     "   by style: [('Normal', 1)]",
 ]
 NOTES_EACH = ["   NOTES p4 [(start)] Normal | 1 lines | 'Ibid.'"]
 FOOTNOTES = [
-    "== FOOTNOTES: 3 paragraphs, 2 double, 1 not double",
+    "== FOOTNOTES: 1 paragraphs, 0 double, 1 not double",
     "   by spacing: [('exact 10 pt', 1)]",
     "   by style: [('Normal', 1)]",
 ]
@@ -78,7 +78,7 @@ def test_expect_single_or_a_number_changes_what_counts(spaced, capsys):
     assert main([str(spaced), "--expect", "single"]) == 1
     out = capsys.readouterr().out.splitlines()
     assert out[0] == "== TEXT: 9 paragraphs, 1 single, 8 not single"
-    assert out[3] == "== NOTES: 4 paragraphs, 1 single, 3 not single"
+    assert out[3] == "== NOTES: 2 paragraphs, 1 single, 1 not single"
     assert main([str(spaced), "--expect", "360"]) == 1
     assert capsys.readouterr().out.splitlines()[0] == (
         "== TEXT: 9 paragraphs, 1 at 1.5 lines, 8 not at 1.5 lines"
@@ -127,3 +127,28 @@ def test_the_manuscript_is_only_read(spaced):
     before = {path.name: path.read_bytes() for path in spaced.parent.iterdir()}
     main([str(spaced), "-v"])
     assert {path.name: path.read_bytes() for path in spaced.parent.iterdir()} == before
+
+
+def test_word_s_separator_entries_are_not_counted_and_cannot_fail_the_check(tmp_path, capsys):
+    # Word keeps two separator entries in each notes part, single spaced, even in a
+    # book with no footnotes. They are not paragraphs of the book.
+    parts = all_double()
+    single = '<w:p><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr><w:r>'
+    for part in ("word/endnotes.xml", "word/footnotes.xml"):
+        parts[part] = parts[part].replace("<w:p><w:r><w:separator/>", single + "<w:separator/>")
+        parts[part] = parts[part].replace(
+            "<w:p><w:r><w:continuationSeparator/>", single + "<w:continuationSeparator/>"
+        )
+    parts["word/footnotes.xml"] = parts["word/footnotes.xml"].split('<w:footnote w:id="1">')[0] + "</w:footnotes>"
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        '<w:r><w:footnoteReference w:id="1"/></w:r>', ""
+    )
+    assert main([str(book(tmp_path, parts)), "-v"]) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "== TEXT: 8 paragraphs, 8 double, 0 not double",
+        "   by spacing: []",
+        "   by style: []",
+        "== NOTES: 2 paragraphs, 2 double, 0 not double",
+        "   by spacing: []",
+        "   by style: []",
+    ]

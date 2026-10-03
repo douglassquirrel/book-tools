@@ -47,7 +47,8 @@ def _split(text):
         found = NOTE.match(line)
         if found:
             notes[int(found.group(1))] = found.group(2)
-        else:
+        elif line.strip():
+            # Blank lines are left out: one comes and goes with every note.
             body.append(line)
     return body, notes
 

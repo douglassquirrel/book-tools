@@ -30,6 +30,8 @@ def _run(args):
     for part, label in PARTS:
         if part in parts:
             rows = measure(parts[part], styles, expect, in_body=part == BODY)
+            if not rows and part != BODY:
+                continue  # a notes part holding only Word's separators: no notes
             all_match = all_match and all(row[4] for row in rows)
             for line in report(label, rows, wanted, args.verbose):
                 print(line)
