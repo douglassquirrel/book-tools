@@ -1,6 +1,7 @@
 """sources-to-text: every source file in a folder to searchable text, a block per page."""
 
 import argparse
+import glob
 import os
 import subprocess
 import tempfile
@@ -8,7 +9,7 @@ import time
 
 from booktools import cli
 from booktools.cli import Refusal
-from booktools.sources import assemble, split_pages
+from booktools.sources import assemble, needs_ocr, split_pages
 
 INDEXES = ("SOURCES.md", "PDF-COVERAGE.md", ".DS_Store")
 LOG = ".convert-log.txt"
@@ -101,9 +102,40 @@ class Job:
         pages = split_pages(done.stdout.decode("utf-8", "replace"))
         total = len(pages)
         ocr, turned = [False] * total, [0] * total
+        for index, page in enumerate(pages):
+            if needs_ocr(page, self.args.min_chars):
+                read = self.read_image(source, index + 1)
+                if read is not None:
+                    pages[index], turned[index] = read
+                    ocr[index] = True
         self.write(name, assemble(pages, ocr, turned).encode("utf-8"))
         self.log(f"{name} pages={total} ocr={sum(ocr)} turned={sum(1 for t in turned if t)}")
         return f"{total} pages, {sum(ocr)} read by OCR, {sum(1 for t in turned if t)} turned"
+
+    def read_image(self, source, number):
+        """Read one page from its image: (the text, the turn it was read at), or None
+        if no image of the page could be made."""
+        prefix = os.path.join(self.scratch, "pg")
+        subprocess.run(
+            ["pdftoppm", "-f", str(number), "-l", str(number), "-scale-to",
+             str(self.args.dpi_scale), "-gray", "-png", source, prefix],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+        )  # fmt: skip
+        images = sorted(glob.glob(prefix + "*.png"))
+        if not images:
+            return None
+        try:
+            return self.tesseract(images[0]), 0
+        finally:
+            for image in glob.glob(prefix + "*"):
+                os.remove(image)
+
+    def tesseract(self, image, *more):
+        done = subprocess.run(
+            ["tesseract", image, "-", *more], stdin=subprocess.DEVNULL, capture_output=True
+        )
+        return done.stdout.decode("utf-8", "replace")
 
     def write(self, name, data):
         """Write a file's text whole: under another name first, which then takes its place."""
@@ -122,6 +154,23 @@ def _parser():
     parser.add_argument("sources", metavar="SOURCES_DIR")
     parser.add_argument(
         "--out", metavar="DIR", help="where the text goes (default: SOURCES_DIR/text)"
+    )
+    parser.add_argument(
+        "--min-chars",
+        type=int,
+        default=80,
+        metavar="N",
+        help="a page with fewer characters than this, spaces aside, is read by OCR (default 80)",
+    )
+    parser.add_argument(
+        "--dpi-scale",
+        type=int,
+        default=2800,
+        metavar="PIXELS",
+        help="the longer side of the page image made for OCR (default 2800)",
+    )
+    parser.add_argument(
+        "--no-rotate", action="store_true", help="read each page as it is; try no turns"
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser

@@ -7,7 +7,11 @@ from tests.stubs import FakeImage, only, pandoc_stub, pdf_stubs
 
 pytestmark = pytest.mark.tier2
 
-LONG = "A page with plenty of text on it, far more than eighty characters once spaces are left out."
+LONG = (
+    "A page with plenty of text on it, a good deal more than eighty characters"
+    " once all of the spaces are left out of the count."
+)
+assert len("".join(LONG.split())) >= 80  # enough not to be sent to OCR
 
 
 def pdf(pages, images=None):
@@ -80,3 +84,48 @@ def test_converts_each_kind_of_source_smallest_first_and_logs_each(sources, caps
         "a-book.epub epub",
     ]
     assert list(sources.scratch.iterdir()) == []
+
+
+SCAN = {
+    "pages": [LONG, "", "pg 3", LONG],
+    "images": {
+        "2": {"text": "Read from the image of page two.", "scores": {"0": 200}},
+        "3": {"text": "A table set sideways.", "scores": {"0": 2, "90": 40, "180": 1, "270": 0}},
+    },
+}
+
+
+def test_a_page_with_too_little_text_is_read_by_ocr_and_headed_so(sources, capsys):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert sources.run("--no-rotate") == 0
+    assert capsys.readouterr().out.splitlines()[0] == "scan.pdf: 4 pages, 2 read by OCR, 0 turned"
+    assert sources.text("scan.pdf.txt") == (
+        f"\n=== PDF page 1 of 4 ===\n{LONG}"
+        "\n=== PDF page 2 of 4 (OCR) ===\nRead from the image of page two."
+        "\n=== PDF page 3 of 4 (OCR) ===\nA table set sideways."
+        f"\n=== PDF page 4 of 4 ===\n{LONG}"
+    )
+    assert sources.text(".convert-log.txt") == "scan.pdf pages=4 ocr=2 turned=0\n"
+    calls = sources.tools.calls()
+    scan = str(sources.folder / "scan.pdf")
+    assert calls[0] == ["-layout", scan, "-"]
+    assert calls[1][:9] == ["-f", "2", "-l", "2", "-scale-to", "2800", "-gray", "-png", scan]
+    assert calls[2][1:] == ["-"]  # tesseract IMAGE -
+    assert calls[1][9].startswith(str(sources.scratch))  # the image is made in the scratch folder
+    assert list(sources.scratch.iterdir()) == []
+
+
+def test_a_page_with_no_image_to_read_keeps_what_text_it_had(sources):
+    sources.add("thin.pdf", pdf(["short", LONG]))
+    assert sources.run() == 0
+    assert sources.text("thin.pdf.txt") == (
+        f"\n=== PDF page 1 of 2 ===\nshort\n=== PDF page 2 of 2 ===\n{LONG}"
+    )
+
+
+def test_min_chars_and_dpi_scale_can_be_changed(sources):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    assert sources.run("--min-chars", "3", "--dpi-scale", "1400", "--no-rotate") == 0
+    # "pg 3" has three characters that are not spaces: no longer too few, so not read by OCR.
+    assert "=== PDF page 3 of 4 ===\npg 3" in sources.text("scan.pdf.txt")
+    assert sources.tools.calls()[1][4:6] == ["-scale-to", "1400"]
