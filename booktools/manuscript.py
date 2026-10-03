@@ -3,6 +3,7 @@
 import re
 
 from booktools.paragraph import Paragraph
+from booktools.sentences import sentence_at
 from booktools.xmlscan import TAG, paragraph_spans
 
 BODY = "word/document.xml"
@@ -33,7 +34,7 @@ class Manuscript:
         self.body = []  # Targets
         self.endnotes = []  # one list of Targets per endnote, in document order
         self.footnotes = []
-        self._markers = {"endnote": [], "footnote": []}  # offsets in the body, per note
+        self._markers = {"endnote": [], "footnote": []}  # (offset in the body, id), per note
         self._outline = None
         for number, (start, end, depth) in enumerate(paragraph_spans(parts[BODY]), 1):
             if depth == 1:
@@ -63,7 +64,7 @@ class Manuscript:
                 continue
             first, last = spans[_id(found.group(1))]
             place = f"{kind}:{len(notes) + 1}"
-            self._markers[kind].append(found.start())
+            self._markers[kind].append((found.start(), _id(found.group(1))))
             notes.append(
                 [
                     Target(part, number, start, end, place)
@@ -77,23 +78,40 @@ class Manuscript:
         """How the book shows the note counted `number`: under its heading, with the
         number it prints as, then the count, as "Chapter 3, note 7 (endnote:42)"."""
         count = f"{kind}:{number}"
-        restart = self._restart(kind)
-        if restart == "eachPage":
+        heading, shown = self.note_place(kind, number)
+        if shown is None:
             return count  # the printed number depends on the page it falls on
+        return f"{heading}, note {shown} ({count})" if heading else f"note {shown} ({count})"
+
+    def note_place(self, kind, number):
+        """(heading, number as printed) for the note counted `number`: the heading is ""
+        when there is none above it, the number None when it restarts on every page."""
+        restart = self._restart(kind)
         outline = self._outlined()
-        markers = [self._paragraph_at(offset) for offset in self._markers[kind]]
+        markers = [self._paragraph_at(offset) for offset, _ in self._markers[kind]]
         here = markers[number - 1]
         level = None
+        shown = number
         if restart == "eachSect":
             section = outline[here][0]
-            number = sum(1 for m in markers[:number] if outline[m][0] == section)
+            shown = sum(1 for m in markers[:number] if outline[m][0] == section)
             level = self._chapter_level()
-        title = None
+        title = ""
         for _, heading_level, text in reversed(outline[: here + 1]):
             if heading_level and (level is None or heading_level == level):
                 title = text
                 break
-        return f"{title}, note {number} ({count})" if title else f"note {number} ({count})"
+        return title, None if restart == "eachPage" else shown
+
+    def marker_sentence(self, kind, number):
+        """The sentence in the body that the marker of the note counted `number` sits in."""
+        offset, id = self._markers[kind][number - 1]
+        target = self.body[self._paragraph_at(offset)]
+        paragraph = Paragraph(self.parts[BODY][target.start : target.end])
+        for at, marker_kind, marker_id in paragraph.markers:
+            if (marker_kind, marker_id) == (kind, id):
+                return sentence_at(paragraph.text, at)
+        return ""  # the marker is inside a text box, whose text is not read
 
     def _restart(self, kind):
         """Where this kind of note starts again from 1: continuous, eachSect or eachPage."""
