@@ -1,8 +1,12 @@
 """The registry of permanent note IDs, and the matching of a save's notes to it."""
 
 import difflib
+import json
 import re
 
+NAME = "book-tools notes"
+VERSION = 1
+FIELDS = ("id", "kind", "label", "text", "sentence", "first_seen", "last_seen", "retired_in")
 WORD = re.compile(r"\w+")
 # Found by experiment on invented saves (word-by-word likeness, 0 to 1): a light edit
 # scores 0.8 to 0.9, a page number changed in a short citation 0.5, a rewording 0.55 to
@@ -27,6 +31,10 @@ class Entry:
         self.retired_in = retired_in
 
 
+class AssignError(Exception):
+    """An --assign names a note or an ID that is not there."""
+
+
 class Matching:
     """What became of each note of a save and each live entry of the registry."""
 
@@ -45,9 +53,33 @@ def match(notes, entries, assign=None):
     matching = Matching()
     pairs = {}  # index of the note -> the entry it keeps
     free = list(entries)  # live entries not yet claimed by a note
+    declared_new = set()  # indexes of notes the user has said are new
+    taken = {}  # entry id -> the place the user assigned it to
+    for place, wanted in (assign or {}).items():
+        kind = place.partition(":")[0]
+        index = next((i for i, note in enumerate(notes) if note.place == place), None)
+        if index is None:
+            count = sum(1 for note in notes if note.kind == kind)
+            has = f"{count or 'no'} {kind}{'' if count == 1 else 's'}"
+            raise AssignError(f"there is no {place} in this save (it has {has})")
+        if wanted == "new":
+            declared_new.add(index)
+            continue
+        if wanted in taken:
+            raise AssignError(f"{wanted} is assigned to both {taken[wanted]} and {place}")
+        entry = next((entry for entry in free if entry.id == wanted), None)
+        if entry is None:
+            raise AssignError(f"{wanted} is not a live ID in the registry")
+        if entry.kind != kind:
+            raise AssignError(f"{wanted} is an {entry.kind}, so it cannot be {place}")
+        taken[wanted] = place
+        pairs[index] = entry
+        free.remove(entry)
     # First, the notes whose text and sentence are both exactly as recorded. Identical
     # notes in identical sentences are paired in order.
     for index, note in enumerate(notes):
+        if index in pairs or index in declared_new:
+            continue
         for entry in free:
             if (entry.kind, entry.text, entry.sentence) == (note.kind, note.text, note.sentence):
                 pairs[index] = entry
@@ -56,7 +88,10 @@ def match(notes, entries, assign=None):
     # Then the notes of which one of the two is exactly as recorded and the other still
     # recognisably the same, with no close rival. Best first; each carry frees its
     # note and entry from being anyone else's rival.
-    links = _links([(i, n) for i, n in enumerate(notes) if i not in pairs], free)
+    open_notes = [
+        (i, n) for i, n in enumerate(notes) if i not in pairs and i not in declared_new
+    ]
+    links = _links(open_notes, free)
     while True:
         clear = [link for link in links if _is_clear(link, links)]
         if not clear:
@@ -73,8 +108,8 @@ def match(notes, entries, assign=None):
             matching.unclear.append((note, [k.entry for k in maybe]))
         else:
             matching.new.append(note)
-    pending = {id(k.entry) for k in links}
-    matching.retired = [entry for entry in free if id(entry) not in pending]
+    pending = {link.entry.id for link in links}
+    matching.retired = [entry for entry in free if entry.id not in pending]
     return matching
 
 
@@ -124,3 +159,85 @@ def likeness(one, other):
     if not a and not b:
         return 1.0
     return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+
+
+class RegistryError(Exception):
+    """The registry file cannot be used."""
+
+
+class Registry:
+    def __init__(self, entries=(), next=1):
+        self.entries = list(entries)  # live entries in document order, then retired ones
+        self.next = next  # the number the next new ID will take
+
+    def live(self):
+        return [entry for entry in self.entries if entry.retired_in is None]
+
+
+def load_registry(text):
+    """The Registry in a registry file's text; raises RegistryError if it is not one."""
+    not_one = RegistryError("it is not a note registry written by note-map")
+    try:
+        data = json.loads(text)
+        if data["registry"] != NAME:
+            raise not_one
+        version, next, notes = data["version"], data["next"], data["notes"]
+        if version > VERSION:
+            raise RegistryError(
+                f"it was written by a later version of note-map (version {version})"
+            )
+        entries = [Entry(**{field: note[field] for field in FIELDS}) for note in notes]
+    except (ValueError, TypeError, KeyError):
+        raise not_one from None
+    if not isinstance(next, int) or not all(isinstance(e.id, str) for e in entries):
+        raise not_one
+    return Registry(entries, next)
+
+
+def dump_registry(registry):
+    """The text of a registry file."""
+    data = {
+        "registry": NAME,
+        "version": VERSION,
+        "next": registry.next,
+        "notes": [{field: getattr(entry, field) for field in FIELDS} for entry in registry.entries],
+    }
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def update(registry, matching, save):
+    """Return (the Registry after a save, {note place: its ID}).
+
+    `matching` must have nothing unclear. `save` identifies the save (its SHA-256).
+    Carried entries take the note's present text and sentence; new notes take the next
+    IDs in document order; entries with no note are retired, never deleted, and an ID
+    is never used again.
+    """
+    kept = {id(note): entry for note, entry in matching.carried}
+    notes = [note for note, _ in matching.carried] + list(matching.new)
+    notes.sort(key=lambda note: (note.kind != "endnote", note.number))
+    next = registry.next
+    live = []
+    ids = {}
+    for note in notes:
+        old = kept.get(id(note))
+        if old is None:
+            entry = Entry(f"N-{next:04d}", note.kind, note.text, note.sentence, "", save, save)
+            next += 1
+        else:
+            entry = Entry(
+                old.id, old.kind, note.text, note.sentence, old.label, old.first_seen, save
+            )
+        live.append(entry)
+        ids[note.place] = entry.id
+    gone = {entry.id for entry in matching.retired}
+    retired = []
+    for entry in registry.entries:
+        if entry.retired_in is not None or entry.id in gone:
+            retired.append(
+                Entry(
+                    entry.id, entry.kind, entry.text, entry.sentence, entry.label,
+                    entry.first_seen, entry.last_seen, entry.retired_in or save,
+                )
+            )
+    return Registry(live + retired, next), ids

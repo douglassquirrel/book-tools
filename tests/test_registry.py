@@ -174,3 +174,125 @@ def test_two_close_rivals_for_one_entry_are_both_asked_about():
     result = outcome(match(notes(edited), entries(TEXTS)))
     assert result["unclear"] == [("endnote:2", ["N-0002"]), ("endnote:3", ["N-0002"])]
     assert result["new"] == [] and result["retired"] == []
+
+
+MOVED = changed(
+    2,
+    text="See the account of the storm given by the harbour master.",
+    sentence="That week no ship put out at all.",
+)
+
+
+def test_assign_settles_an_unclear_note_as_an_existing_id_or_as_new():
+    kept = match(notes(MOVED), entries(TEXTS), {"endnote:3": "N-0003"})
+    assert outcome(kept) == {
+        "carried": [
+            ("endnote:1", "N-0001"), ("endnote:2", "N-0002"),
+            ("endnote:3", "N-0003"), ("endnote:4", "N-0004"),
+        ],
+        "new": [], "retired": [], "unclear": [],
+    }
+    fresh = match(notes(MOVED), entries(TEXTS), {"endnote:3": "new"})
+    assert outcome(fresh) == {
+        "carried": [("endnote:1", "N-0001"), ("endnote:2", "N-0002"), ("endnote:4", "N-0004")],
+        "new": ["endnote:3"], "retired": ["N-0003"], "unclear": [],
+    }
+
+
+def test_an_assignment_that_makes_no_sense_is_refused():
+    from booktools.registry import AssignError
+
+    cases = {
+        ("endnote:9", "N-0003"): "there is no endnote:9 in this save (it has 4 endnotes)",
+        ("endnote:3", "N-0099"): "N-0099 is not a live ID in the registry",
+        ("footnote:1", "N-0003"): "there is no footnote:1 in this save (it has no footnotes)",
+    }
+    for (place, id), message in cases.items():
+        with pytest.raises(AssignError) as caught:
+            match(notes(MOVED), entries(TEXTS), {place: id})
+        assert str(caught.value) == message
+    with pytest.raises(AssignError) as caught:
+        match(notes(MOVED), entries(TEXTS), {"endnote:3": "N-0003", "endnote:4": "N-0003"})
+    assert str(caught.value) == "N-0003 is assigned to both endnote:3 and endnote:4"
+    mixed = notes(MOVED) + notes([("A footnote.", "Some sentence.")], "footnote")
+    with pytest.raises(AssignError) as caught:
+        match(mixed, entries(TEXTS), {"footnote:1": "N-0003"})
+    assert str(caught.value) == "N-0003 is an endnote, so it cannot be footnote:1"
+
+
+def after(pairs, registry=None, save="save-1", assign=None):
+    from booktools.registry import Registry, update
+
+    registry = registry or Registry()
+    matching = match(notes(pairs), registry.live(), assign)
+    return update(registry, matching, save)
+
+
+def summary(registry):
+    return [
+        (e.id, e.text[:12], e.first_seen, e.last_seen, e.retired_in) for e in registry.entries
+    ]
+
+
+def test_a_first_run_numbers_every_note_in_document_order():
+    registry, ids = after(TEXTS)
+    assert ids == {"endnote:1": "N-0001", "endnote:2": "N-0002", "endnote:3": "N-0003", "endnote:4": "N-0004"}
+    assert registry.next == 5
+    assert summary(registry)[0] == ("N-0001", "Recorded by ", "save-1", "save-1", None)
+    assert [e.id for e in registry.entries] == ["N-0001", "N-0002", "N-0003", "N-0004"]
+
+
+def test_ids_are_carried_while_numbers_move_and_a_retired_id_is_never_used_again():
+    first, _ = after(TEXTS)
+    added = TEXTS[:1] + [("A wholly new remark about tides.", "The tide tables were wrong.")] + TEXTS[1:]
+    second, ids = after(added, first, "save-2")
+    assert ids == {
+        "endnote:1": "N-0001", "endnote:2": "N-0005", "endnote:3": "N-0002",
+        "endnote:4": "N-0003", "endnote:5": "N-0004",
+    }
+    assert summary(second)[1] == ("N-0005", "A wholly new", "save-2", "save-2", None)
+    # Now delete that note and add another: the new one must not take N-0005.
+    third, ids = after(TEXTS + [("Yet another.", "A last sentence.")], second, "save-3")
+    assert ids["endnote:5"] == "N-0006"
+    assert [(e.id, e.retired_in) for e in third.entries] == [
+        ("N-0001", None), ("N-0002", None), ("N-0003", None), ("N-0004", None),
+        ("N-0006", None), ("N-0005", "save-3"),
+    ]
+    assert third.next == 7
+    assert [e.last_seen for e in third.entries] == ["save-3"] * 5 + ["save-2"]
+
+
+def test_a_carried_entry_takes_the_note_s_present_text_and_sentence_and_keeps_its_label():
+    first, _ = after(TEXTS)
+    first.entries[2].label = "harbour master"
+    edited = changed(2, text="See the harbour master’s own account of the great storm of 1881.")
+    second, _ = after(edited, first, "save-2")
+    entry = second.entries[2]
+    assert (entry.id, entry.label, entry.first_seen, entry.last_seen) == (
+        "N-0003", "harbour master", "save-1", "save-2",
+    )
+    assert entry.text.endswith("great storm of 1881.")
+
+
+def test_the_registry_file_round_trips_and_an_unchanged_save_leaves_it_identical():
+    from booktools.registry import dump_registry, load_registry
+
+    first, _ = after(TEXTS + [("Twö “quoted”", "S.")])
+    first.entries[0].label = "Trinity House"
+    text = dump_registry(first)
+    assert text.endswith("\n") and "Twö “quoted”" in text  # readable, not escaped
+    loaded = load_registry(text)
+    assert dump_registry(loaded) == text
+    again, _ = after(TEXTS + [("Twö “quoted”", "S.")], loaded, "save-1")
+    assert dump_registry(again) == text
+
+
+def test_a_damaged_registry_is_refused():
+    from booktools.registry import RegistryError, load_registry
+
+    for text in ("", "not json", "[]", '{"notes": []}', '{"registry": "book-tools notes", "version": 1, "next": 2, "notes": [{"id": "N-0001"}]}'):
+        with pytest.raises(RegistryError):
+            load_registry(text)
+    with pytest.raises(RegistryError) as caught:
+        load_registry('{"registry": "book-tools notes", "version": 2, "next": 1, "notes": []}')
+    assert str(caught.value) == "it was written by a later version of note-map (version 2)"
