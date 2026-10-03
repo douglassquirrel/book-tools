@@ -29,3 +29,18 @@ def test_accepting_drops_the_deleted_runs_and_keeps_the_inserted_ones():
         "<w:r><w:t>slow</w:t></w:r>"
         '<w:r><w:t xml:space="preserve"> fox</w:t></w:r></w:p>'
     )
+
+
+THEIRS = (
+    '<w:p><w:pPr><w:rPr><w:ins w:id="1" w:author="Ed"/></w:rPr></w:pPr>'
+    '<w:ins w:id="2" w:author="Ed"><w:r><w:t>theirs </w:t></w:r></w:ins>'
+    '<w:del w:id="3" w:author="Ed"><w:r><w:delText>gone </w:delText></w:r></w:del>'
+    f'<w:ins w:id="8"{S}><w:r><w:t>ours</w:t></w:r></w:ins></w:p>'
+)
+
+
+def test_revisions_not_in_the_set_are_left_exactly_as_they_are():
+    untouched = THEIRS[: THEIRS.index('<w:ins w:id="8"')]
+    assert reject(THEIRS, {8}) == untouched + "</w:p>"
+    assert accept(THEIRS, {8}) == untouched + "<w:r><w:t>ours</w:t></w:r></w:p>"
+    assert accept(THEIRS, set()) == THEIRS
