@@ -575,8 +575,14 @@ about its full size.
 The suite needs none of pandoc, poppler, Tesseract, Backlog or git: each is replaced by a
 small stand-in program on a `PATH` of its own, which records what it was given and can be
 told to fail. Every document in the tests is invented and built by the tests themselves; no
-real manuscript, source or ticket is in this repository. Coverage of `booktools/` is 98%
-(statements and branches).
+real manuscript, source or ticket is in this repository.
+
+Coverage of `booktools/` is 99% (statements and branches; 344 tests). The seven statements
+no test in the suite's own process runs are: three lines that remove a part-written file
+when a write is cut short between writing and renaming (in `file-tickets`, `note-map` and
+the `.epub` path of `sources-to-text`); and the lines of `sources-to-text` that only its
+worker processes run (writing their tally, and the module's entry point), which the
+`--workers` tests exercise in child processes where coverage is not measured.
 
 `.venv/bin/pytest -m tier1` runs the tests of pure functions alone, and `-m tier2` the tests
 of whole commands.
