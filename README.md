@@ -5,8 +5,60 @@ Word, with an AI assistant doing the checking and record-keeping and
 [Backlog.md](https://github.com/MrLesk/Backlog.md) as the issue tracker. It is not tied to any
 one book or publisher.
 
-**Status: just started. None of the commands exists yet.** This README describes what is
-planned and will be replaced by full instructions as each command is built.
+**Status: one command of six works.** `propose-edits` is built and tested; the other five
+are not written yet. This README will be replaced by full instructions when all six exist.
+
+## Using `propose-edits` now
+
+It needs only the Python 3 that comes with Apple's command line tools. From this folder:
+
+    ./propose-edits EDITS.json --in MANUSCRIPT.docx --out COPY.docx --dry-run
+    ./propose-edits EDITS.json --in MANUSCRIPT.docx --out COPY.docx
+
+The manuscript is only read. The second command writes `COPY.docx`, a copy holding each
+edit as a tracked change for the author to accept or reject in Word, and refuses if a file
+of that name exists (`--force` to replace it). `--dry-run` shows where each edit falls and
+writes nothing. `./propose-edits --help` lists the other flags.
+
+An edits file is a JSON list. Each edit gives the existing text (`find`, within one
+paragraph) and what it should become (`replace`; empty to delete):
+
+```json
+[
+  {"id": "E1", "find": "keeper isn’t one", "replace": "keeper is not one", "why": "no contractions"},
+  {"id": "E3", "where": "endnote:1", "find": "Trinity House", "replace": "Trinity House, London"}
+]
+```
+
+`where` is `body` (the default), `endnote:N` or `footnote:N` (N counts the notes through the
+document from 1), or `all`. If the text occurs more than once, add `"occurrence": 2`.
+
+Try it on the sample documents (`tests/fixtures/`):
+
+    ./propose-edits tests/fixtures/edits.json --in tests/fixtures/sample.docx --out /tmp/x.docx
+
+```
+E1 | body, paragraph 3 | … at dusk, and the keeper [isn’t → is not] one to waste oil. | no contractions | PASS
+E2 | body, paragraph 4 | … wrote every figure in a [large  →]ledger. | cut | PASS
+E3 | Chapter 1, note 1 (endnote:1) | …Recorded by Trinity House[→ , London] in the station log. | place | PASS
+reject all: PASS: every paragraph reads as in the original
+accept all: PASS: the original with exactly the 3 edits made
+revisions: PASS: 4 revisions for 3 edits, all by Claude at 2026-10-03T16:35:00Z
+package: PASS: 2 parts changed, each well-formed; everything else byte-identical
+wrote /tmp/x.docx
+```
+
+Each edit has a line: its id, where it is, the words around it with the change in brackets,
+its reason, and PASS. The last four results are checks the command always makes on the copy
+it wrote: with its changes rejected the text is the original; with them accepted it is the
+original plus exactly the listed edits; every change carries the author and date; and
+nothing else in the file differs by a byte. If any check fails, no copy is kept and the exit
+code is 1.
+
+An edit is refused, and nothing is written, when its text is not found, is found more than
+once without `occurrence`, overlaps another edit, runs across two paragraphs, crosses a
+note marker, tab, line break, picture or the edge of a link, or touches a change someone
+has already tracked.
 
 ## What it will do
 
