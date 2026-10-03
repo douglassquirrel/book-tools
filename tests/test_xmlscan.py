@@ -27,3 +27,17 @@ def test_reports_a_paragraph_inside_a_paragraph_at_depth_two():
         "<w:p><w:r><w:drawing><w:txbxContent>" + inner + "</w:txbxContent></w:drawing></w:r></w:p>"
     )
     assert slices("<w:body>" + outer + "</w:body>") == [(outer, 1), (inner, 2)]
+
+
+def test_parse_gives_each_element_its_offsets_and_children():
+    from booktools.xmlscan import parse
+
+    xml = '<w:r w:rsidR="00A1"><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">a &gt; b</w:t></w:r>'
+    run = parse(xml)
+    assert (run.name, run.attrs, xml[run.start : run.end]) == ("w:r", ' w:rsidR="00A1"', xml)
+    assert [c.name for c in run.children] == ["w:rPr", "w:t"]
+    rpr, t = run.children
+    assert xml[rpr.start : rpr.end] == "<w:rPr><w:b/></w:rPr>"
+    assert [c.name for c in rpr.children] == ["w:b"]
+    assert xml[t.open_end : t.close_start] == "a &gt; b"
+    assert xml[run.open_end : run.close_start] == xml[len('<w:r w:rsidR="00A1">') : -len("</w:r>")]

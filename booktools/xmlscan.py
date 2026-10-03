@@ -35,3 +35,36 @@ def paragraph_spans(xml):
             open_at.append(len(spans))
             spans.append((tag.start(), None, len(open_at)))
     return spans
+
+
+class Node:
+    """One element, by its offsets in the text it was parsed from."""
+
+    def __init__(self, name, attrs, start, open_end):
+        self.name = name
+        self.attrs = attrs  # the raw text of the attributes
+        self.start = start  # offset of "<"
+        self.open_end = open_end  # offset just after the start tag
+        self.close_start = open_end  # offset of the end tag (open_end if empty)
+        self.end = open_end  # offset just after the element
+        self.children = []
+
+
+def parse(xml):
+    """Parse `xml`, which holds exactly one element, into a tree of Nodes."""
+    root = None
+    stack = []
+    for tag in TAG.finditer(xml):
+        if tag.group("close"):
+            node = stack.pop()
+            node.close_start = tag.start()
+            node.end = tag.end()
+            continue
+        node = Node(tag.group("name"), tag.group("attrs"), tag.start(), tag.end())
+        if stack:
+            stack[-1].children.append(node)
+        elif root is None:
+            root = node
+        if not tag.group("empty"):
+            stack.append(node)
+    return root
