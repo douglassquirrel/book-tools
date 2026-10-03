@@ -10,10 +10,13 @@ import subprocess
 from booktools import cli
 from booktools.cli import Refusal
 from booktools.tickets import (
+    ResultsError,
     TicketsFileError,
     comment_command,
     create_command,
     created_id,
+    dump_results,
+    load_results,
     mismatches,
     parse_tickets,
     view_command,
@@ -39,6 +42,13 @@ def _run(args):
     if not tickets:
         print("no tickets, nothing filed")
         return 0
+    records = {}
+    if args.results and os.path.exists(args.results):
+        try:
+            with open(args.results, encoding="utf-8") as file:
+                records = load_results(file.read(), tickets)
+        except ResultsError as error:
+            raise Refusal(f"{args.results} does not fit {args.tickets}: {error}") from None
     if not os.path.isfile(os.path.join(args.project, "backlog", "config.yml")):
         raise Refusal(
             f"{args.project} is not a Backlog project (it has no backlog/config.yml);"
@@ -65,8 +75,22 @@ def _run(args):
             "this backlog has no `task view --json`, which is needed to check each"
             f" ticket; the kit was tested with Backlog {TESTED_WITH}"
         )
-    filed = failed = 0
+    filed = failed = skipped = 0
     for ticket in tickets:
+        earlier = records.get(ticket.index)
+        if earlier and earlier["id"]:
+            # It exists in Backlog already: never create it a second time.
+            if earlier["outcome"] == "filed":
+                skipped += 1
+                print(f"{earlier['id']}  already filed  {ticket.title}")
+            else:
+                failed += 1
+                then = earlier["outcome"].replace("failed: ", "", 1)
+                print(
+                    f"{earlier['id']}  FAILED  {ticket.title}"
+                    f" (created in an earlier run and not filed again; then: {then})"
+                )
+            continue
         id, fault = _file(ticket, args.project)
         if fault:
             failed += 1
@@ -74,8 +98,29 @@ def _run(args):
         else:
             filed += 1
             print(f"{id}  filed  {ticket.title}")
-    print(f"{filed} filed, {failed} failed, 0 skipped")
+        records[ticket.index] = {
+            "index": ticket.index,
+            "title": ticket.title,
+            "id": id,
+            "outcome": f"failed: {fault}" if fault else "filed",
+        }
+        _save(args.results, records)
+    print(f"{filed} filed, {failed} failed, {skipped} skipped")
     return 1 if failed else 0
+
+
+def _save(path, records):
+    """Write the results file whole, through a file beside it that then takes its name."""
+    if not path:
+        return
+    partial = f"{path}.partial-{os.getpid()}"
+    try:
+        with open(partial, "w", encoding="utf-8") as file:
+            file.write(dump_results([records[index] for index in sorted(records)]))
+        os.replace(partial, path)
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
 
 
 def _file(ticket, project):

@@ -202,3 +202,69 @@ def test_dry_run_prints_each_command_quoted_for_reading_and_runs_nothing(batch, 
         ]
     )
     assert batch.backlog.calls() == []
+
+
+def records(batch):
+    return json.loads(batch.results.read_text(encoding="utf-8"))
+
+
+def test_results_are_written_as_the_batch_goes_and_a_second_run_files_nothing_twice(
+    tmp_path, monkeypatch, capsys
+):
+    three = TICKETS + [{"title": "A third"}]
+    batch = Batch(tmp_path, monkeypatch, tickets=three, fail_create=[2])
+    assert batch.run("--results", str(batch.results)) == 1
+    assert capsys.readouterr().out.splitlines()[-1] == "2 filed, 1 failed, 0 skipped"
+    assert records(batch) == [
+        {"index": 1, "title": "Ch. 3: the 2019 figure", "id": "TASK-1", "outcome": "filed"},
+        {"index": 2, "title": "Only a title", "id": None,
+         "outcome": "failed: backlog said: Invalid status: Nonsense."
+         " Valid statuses are: To Do, In Progress, Done"},
+        {"index": 3, "title": "A third", "id": "TASK-2", "outcome": "filed"},
+    ]
+
+    batch.backlog.control()  # backlog is well again
+    assert batch.run("--results", str(batch.results)) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "TASK-1  already filed  Ch. 3: the 2019 figure",
+        "TASK-3  filed  Only a title",
+        "TASK-2  already filed  A third",
+        "1 filed, 0 failed, 2 skipped",
+    ]
+    assert [r["outcome"] for r in records(batch)] == ["filed", "filed", "filed"]
+    creates = [call for call in batch.backlog.calls() if call[:2] == ["task", "create"]]
+    assert [call[-1] for call in creates] == [
+        "Ch. 3: the 2019 figure", "Only a title", "A third", "Only a title",
+    ]
+
+
+def test_a_ticket_created_earlier_but_not_confirmed_is_never_created_again(
+    tmp_path, monkeypatch, capsys
+):
+    batch = Batch(tmp_path, monkeypatch, mangle_create=1)
+    assert batch.run("--results", str(batch.results)) == 1
+    capsys.readouterr()
+    batch.backlog.control()
+    assert batch.run("--results", str(batch.results)) == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "TASK-1  FAILED  Ch. 3: the 2019 figure (created in an earlier run and not filed again;"
+        " then: the description came back different)",
+        "TASK-2  already filed  Only a title",
+        "0 filed, 1 failed, 1 skipped",
+    ]
+    assert len([c for c in batch.backlog.calls() if c[:2] == ["task", "create"]]) == 2
+
+
+def test_a_results_file_from_another_batch_is_refused_and_nothing_is_filed(batch, capsys):
+    batch.results.write_text('[{"index": 1, "title": "Other", "id": "TASK-9", "outcome": "filed"}]')
+    assert refused(batch, capsys, "--results", str(batch.results)) == [
+        f"file-tickets: {batch.results} does not fit {batch.tickets}:"
+        ' the record for ticket 1 is titled "Other" but that ticket is titled'
+        ' "Ch. 3: the 2019 figure"'
+    ]
+
+
+def test_without_results_no_file_is_written(batch, tmp_path):
+    before = sorted(path.name for path in tmp_path.iterdir())
+    assert batch.run() == 0
+    assert sorted(path.name for path in tmp_path.iterdir()) == before
