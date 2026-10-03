@@ -313,3 +313,54 @@ def test_an_interrupted_run_leaves_nothing_behind_and_exits_130(book, capsys, mo
     assert not book.out.exists()
     assert list(book.scratch.iterdir()) == []
     assert [path.name for path in book.out.parent.iterdir()] == []
+
+
+def test_a_document_that_already_holds_tracked_changes(tmp_path, capsys):
+    from tests.samples import BODY_PARAGRAPHS
+
+    theirs = (
+        '<w:ins w:id="40" w:author="Ed" w:date="2026-09-30T10:00:00Z">'
+        '<w:r><w:t xml:space="preserve"> Truly.</w:t></w:r></w:ins>'
+        '<w:del w:id="41" w:author="Ed" w:date="2026-09-30T10:00:00Z">'
+        '<w:r><w:delText xml:space="preserve"> Gone.</w:delText></w:r></w:del>'
+    )
+    body = list(BODY_PARAGRAPHS)
+    body[8] = body[8].replace("</w:p>", theirs + "</w:p>")
+    edits = [{"id": "ok", "find": "March", "replace": "April"}]
+    book = Book(tmp_path, edits, sample_parts(body))
+    assert book.run() == 0
+    with zipfile.ZipFile(book.out) as copy:
+        xml = copy.read("word/document.xml").decode("utf-8")
+    assert theirs in xml  # the earlier changes are untouched
+    assert f'<w:del w:id="42"{STAMP}>' in xml and f'<w:ins w:id="43"{STAMP}>' in xml
+    assert "revisions: PASS: 2 revisions for 1 edit, all by Claude" in capsys.readouterr().out
+
+    book.edits.write_text(json.dumps([{"find": "missing. Truly", "replace": "missing"}]))
+    assert book.run("--force") == 1
+    assert capsys.readouterr().err.splitlines()[1] == (
+        '  edit 1: the "find" text touches an existing tracked insertion;'
+        " accept or reject that change in Word first"
+    )
+
+
+def test_line_endings_inside_the_xml_are_kept_as_they_were(tmp_path):
+    parts = sample_parts()
+    parts["word/document.xml"] = parts["word/document.xml"].replace("</w:p>", "</w:p>\r\n")
+    book = Book(tmp_path, parts=parts)
+    assert book.run() == 0
+    with zipfile.ZipFile(book.manuscript) as old, zipfile.ZipFile(book.out) as new:
+        before, after = old.read("word/document.xml"), new.read("word/document.xml")
+    assert after.count(b"\r\n") == before.count(b"\r\n") == 10
+    assert b"\n" not in after.replace(b"\r\n", b"")
+
+
+def test_text_stored_decomposed_is_found_by_an_edit_typed_composed(tmp_path, capsys):
+    from tests.samples import BODY_PARAGRAPHS, p
+
+    body = list(BODY_PARAGRAPHS) + [p("The café by the pier.")]
+    edits = [{"find": "café by", "replace": "café near"}]
+    book = Book(tmp_path, edits, sample_parts(body))
+    assert book.run() == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "edit 1 | body, paragraph 10 | The café [by → near] the pier. | | PASS"
+    )

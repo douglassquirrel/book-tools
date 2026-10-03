@@ -1,13 +1,13 @@
 import pytest
 
-from booktools.trim import common_ends
+from booktools.trim import difference
 
 pytestmark = pytest.mark.tier1
 
 
 def changed(old, new):
-    prefix, suffix = common_ends(old, new)
-    return old[prefix : len(old) - suffix], new[prefix : len(new) - suffix]
+    start, end, text = difference(old, new)
+    return old[start:end], text
 
 
 def test_leaves_the_unchanged_words_at_both_ends_unmarked():
@@ -38,3 +38,9 @@ def test_nothing_in_common_marks_everything():
 
 def test_never_parts_a_letter_from_its_accent():
     assert changed("cafés here", "cafes here") == ("cafés", "cafes")
+
+
+def test_composed_and_decomposed_spellings_of_a_word_count_as_unchanged():
+    # The document stores the accent separately; the edit was typed with it composed.
+    assert difference("The café by the pier", "The café near the pier") == (10, 12, "near")
+    assert difference("café one", "café two") == (5, 8, "two")

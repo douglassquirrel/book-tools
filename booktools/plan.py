@@ -5,7 +5,7 @@ import unicodedata
 from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
 from booktools.paragraph import Paragraph
 from booktools.revise import Change
-from booktools.trim import common_ends
+from booktools.trim import difference
 
 ORDER = {BODY: 0, ENDNOTES: 1, FOOTNOTES: 2}
 
@@ -70,9 +70,8 @@ def plan(edits, manuscript, highest_id):
             problems.append(f'{edit.name}: the "find" text {obstacle}; {advice}')
             continue
         old = read(target).text[start:end]
-        prefix, suffix = common_ends(old, edit.replace)
-        new = edit.replace[prefix : len(edit.replace) - suffix]
-        change = Change(start + prefix, end - suffix, new, after=prefix > 0)
+        first, last, new = difference(old, edit.replace)
+        change = Change(start + first, start + last, new, after=first > 0)
         located.append(Located(edit, target, start, end, change, read(target).text))
     located.sort(
         key=lambda found: (

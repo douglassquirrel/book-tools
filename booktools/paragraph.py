@@ -3,8 +3,8 @@ character sits in the XML."""
 
 import html
 import re
-import unicodedata
 
+from booktools.text import characters, nfc
 from booktools.xmlscan import parse
 
 # One character of text as the XML spells it: an entity or a single character.
@@ -109,15 +109,15 @@ class Paragraph:
         Both sides are compared in NFC, so composed and decomposed spellings of
         the same text match; a match never takes a letter without its accent.
         """
-        nfc, to_text = self._composed()
-        needle = unicodedata.normalize("NFC", needle)
+        composed, to_text = self._composed()
+        needle = nfc(needle)
         found = []
-        at = nfc.find(needle) if needle else -1
+        at = composed.find(needle) if needle else -1
         while at != -1:
             end = at + len(needle)
             if at in to_text and end in to_text:
                 found.append((to_text[at], to_text[end]))
-            at = nfc.find(needle, at + 1)
+            at = composed.find(needle, at + 1)
         return found
 
     def obstacle(self, start, end):
@@ -144,26 +144,12 @@ class Paragraph:
         if self._nfc is None:
             parts = []
             to_text = {0: 0}
-            length = 0
-            cluster = ""
-            for offset, char in enumerate(self.text):
-                if cluster and _starts_new_character(cluster, char):
-                    parts.append(unicodedata.normalize("NFC", cluster))
-                    length += len(parts[-1])
-                    to_text[length] = offset
-                    cluster = ""
-                cluster += char
-            parts.append(unicodedata.normalize("NFC", cluster))
-            to_text[length + len(parts[-1])] = len(self.text)
+            length = offset = 0
+            for character in characters(self.text):
+                parts.append(nfc(character))
+                length += len(parts[-1])
+                offset += len(character)
+                to_text[length] = offset
             self._nfc = ("".join(parts), to_text)
         return self._nfc
 
-
-def _starts_new_character(before, char):
-    """Whether `char` stands by itself after `before` rather than combining with it."""
-    if char.isascii() and before.isascii():
-        return True
-    if unicodedata.combining(char):
-        return False
-    nfc = unicodedata.normalize
-    return nfc("NFC", before + char) == nfc("NFC", before) + nfc("NFC", char)
