@@ -67,7 +67,8 @@ def _run(args, clock, image, given):
         image = None
     elif image is None:
         image = _pillow()
-        if image is None and not worker:
+        pdfs = any(name.lower().endswith(".pdf") for name in (args.redo or waiting))
+        if image is None and pdfs and not worker:
             print(
                 "sources-to-text: Pillow is not installed, so each page is read as it stands"
                 " and one scanned sideways or upside down will not be noticed"

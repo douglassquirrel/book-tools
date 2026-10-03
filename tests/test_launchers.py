@@ -13,7 +13,10 @@ from tests.samples import SAMPLE_EDITS, sample_parts
 pytestmark = pytest.mark.tier2
 
 KIT = Path(__file__).resolve().parent.parent
-LAUNCHERS = ("propose-edits", "file-tickets", "note-map", "compare-saves", "check-spacing")
+LAUNCHERS = (
+    "propose-edits", "file-tickets", "note-map", "compare-saves", "check-spacing",
+    "sources-to-text",
+)
 
 
 @pytest.fixture
@@ -113,4 +116,18 @@ def test_check_spacing_runs_from_another_folder(kit, tmp_path):
     assert (done.returncode, done.stderr) == (1, "")
     assert done.stdout.splitlines()[0] == "== TEXT: 9 paragraphs, 8 double, 1 not double"
     assert [path.name for path in book.iterdir()] == ["in.docx"]
+    assert list(kit.rglob("__pycache__")) == []
+
+
+def test_sources_to_text_runs_from_another_folder_with_two_workers(kit, tmp_path):
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    for name in ("a.md", "b.txt", "c.md"):
+        (sources / name).write_text(name * 3, encoding="utf-8")
+    done = run(kit, "sources-to-text", ".", "--workers", "2", cwd=sources)
+    assert (done.returncode, done.stderr) == (0, "")
+    assert done.stdout.splitlines()[-1] == "3 converted, 0 skipped, 0 failed"
+    assert sorted(path.name for path in (sources / "text").iterdir()) == [
+        ".convert-log.txt", "a.md.txt", "b.txt.txt", "c.md.txt",
+    ]
     assert list(kit.rglob("__pycache__")) == []
