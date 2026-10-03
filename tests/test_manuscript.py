@@ -147,3 +147,9 @@ def test_a_marker_with_no_note_behind_it_is_not_counted():
     parts = dict(PARTS)
     parts[BODY] = parts[BODY].replace("<w:sectPr/>", ref("endnote", 99) + "<w:sectPr/>")
     assert [note[0].place for note in Manuscript(parts).endnotes] == ["endnote:1", "endnote:2"]
+
+
+def test_a_notes_part_with_a_stray_end_tag_does_not_break_the_reading():
+    parts = dict(PARTS)
+    parts[ENDNOTES] = parts[ENDNOTES].replace("<w:endnotes>", "<w:endnotes></w:endnote>")
+    assert [note[0].place for note in Manuscript(parts).endnotes] == ["endnote:1", "endnote:2"]

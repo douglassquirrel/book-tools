@@ -48,14 +48,16 @@ class Manuscript:
         if xml is None:
             return []
         spans = {}  # the note's id -> (start, end) of its element
+        opened = None  # (the id, the start) of the note element now open
         for tag in TAG.finditer(xml):
             if tag.group("name") != "w:" + kind:
                 continue
             if tag.group("close"):
-                spans[opened] = (spans[opened], tag.end())
+                if opened is not None:
+                    spans[opened[0]] = (opened[1], tag.end())
+                opened = None
             elif not tag.group("empty"):
-                opened = _id(tag.group("attrs"))
-                spans[opened] = tag.start()
+                opened = (_id(tag.group("attrs")), tag.start())
         paragraphs = list(enumerate(paragraph_spans(xml), 1))
         notes = []
         marker = re.compile(rf"<w:{kind}Reference\b([^>]*)>")
