@@ -2,6 +2,7 @@
 
 import argparse
 import glob
+import json
 import os
 import subprocess
 import sys
@@ -52,20 +53,36 @@ def _run(args, clock, image):
                 " (to install it: python3 -m pip install --user Pillow)",
                 file=sys.stderr,
             )
-    converted = skipped = failed = 0
+    deadline = clock() + args.seconds if args.seconds is not None else None
+    converted = skipped = failed = unfinished = 0
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
-        job = Job(folder, out, scratch, args, image)
-        for name in _sources(folder):
-            if os.path.exists(job.target(name)):
-                continue
-            outcome = job.convert(name)
+        job = Job(folder, out, scratch, args, image, clock, deadline)
+        names = [name for name in _sources(folder) if name not in args.skip]
+        waiting = [name for name in names if not os.path.exists(job.target(name))]
+        for position, name in enumerate(waiting):
+            if job.out_of_time():
+                unfinished = len(waiting) - position
+                break
+            try:
+                outcome = job.convert(name)
+            except OutOfTime as stopped:
+                print(f"{name}: {stopped}")
+                unfinished = len(waiting) - position
+                break
             print(f"{name}: {outcome}")
             if outcome.startswith("skipped"):
                 skipped += 1
             else:
                 converted += 1
-    print(f"{converted} converted, {skipped} skipped, {failed} failed")
+    summary = f"{converted} converted, {skipped} skipped, {failed} failed"
+    if unfinished:
+        summary += f"; {unfinished} not finished: run again to go on"
+    print(summary)
     return 0
+
+
+class OutOfTime(Exception):
+    """The time allowed by --seconds ran out part of the way through a file."""
 
 
 def _pillow():
@@ -90,9 +107,17 @@ def _sources(folder):
 class Job:
     """One run's folders and settings, and the conversion of one file at a time."""
 
-    def __init__(self, folder, out, scratch, args, image):
+    def __init__(self, folder, out, scratch, args, image, clock, deadline):
         self.folder, self.out, self.scratch, self.args = folder, out, scratch, args
         self.image = image  # Pillow's Image module, or None to read pages as they are
+        self.clock, self.deadline = clock, deadline
+
+    def out_of_time(self):
+        return self.deadline is not None and self.clock() > self.deadline
+
+    def cache(self, name):
+        """Where a part-converted PDF's pages are kept between runs."""
+        return os.path.join(self.out, f".{name}.pages.json")
 
     def target(self, name):
         return os.path.join(self.out, name + ".txt")
@@ -126,21 +151,53 @@ class Job:
         return "skipped (not a kind this command converts)"
 
     def pdf(self, name, source):
-        done = subprocess.run(
-            ["pdftotext", "-layout", source, "-"], stdin=subprocess.DEVNULL, capture_output=True
-        )
-        pages = split_pages(done.stdout.decode("utf-8", "replace"))
+        cache = self.cache(name)
+        if os.path.exists(cache):
+            with open(cache, encoding="utf-8") as file:
+                state = json.load(file)
+        else:
+            done = subprocess.run(
+                ["pdftotext", "-layout", source, "-"],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+            )
+            pages = split_pages(done.stdout.decode("utf-8", "replace"))
+            total = len(pages)
+            state = {
+                "pages": pages,
+                "done": [None] * total,
+                "ocr": [False] * total,
+                "rot": [0] * total,
+            }
+        pages, done, ocr, turned = state["pages"], state["done"], state["ocr"], state["rot"]
         total = len(pages)
-        ocr, turned = [False] * total, [0] * total
         for index, page in enumerate(pages):
+            if done[index] is not None:
+                continue
+            if self.out_of_time():
+                self.save(cache, state)
+                finished = sum(1 for text in done if text is not None)
+                raise OutOfTime(
+                    f"stopped after {finished} of {total} pages: out of time"
+                    f" (--seconds {self.args.seconds:g})"
+                )
             if needs_ocr(page, self.args.min_chars):
                 read = self.read_image(source, index + 1)
                 if read is not None:
-                    pages[index], turned[index] = read
+                    page, turned[index] = read
                     ocr[index] = True
-        self.write(name, assemble(pages, ocr, turned).encode("utf-8"))
+            done[index] = page
+        self.write(name, assemble(done, ocr, turned).encode("utf-8"))
+        if os.path.exists(cache):
+            os.remove(cache)
         self.log(f"{name} pages={total} ocr={sum(ocr)} turned={sum(1 for t in turned if t)}")
         return f"{total} pages, {sum(ocr)} read by OCR, {sum(1 for t in turned if t)} turned"
+
+    def save(self, cache, state):
+        partial = cache + ".partial"
+        with open(partial, "w", encoding="utf-8") as file:
+            json.dump(state, file)
+        os.replace(partial, cache)
 
     def read_image(self, source, number):
         """Read one page from its image: (the text, the turn it was read at), or None
@@ -202,6 +259,15 @@ def _parser():
     parser.add_argument("sources", metavar="SOURCES_DIR")
     parser.add_argument(
         "--out", metavar="DIR", help="where the text goes (default: SOURCES_DIR/text)"
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        metavar="S",
+        help="stop after about this long; the next run goes on where this one stopped",
+    )
+    parser.add_argument(
+        "--skip", nargs="+", default=[], metavar="NAME", help="file names to leave alone"
     )
     parser.add_argument(
         "--min-chars",

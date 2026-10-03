@@ -172,3 +172,74 @@ def test_no_rotate_tries_no_turns_and_gives_no_warning(sources, capsys):
     assert capsys.readouterr().err == ""
     assert "(OCR, page turned" not in sources.text("scan.pdf.txt")
     assert not any(call[-1] == "tsv" for call in sources.tools.calls())
+
+
+class Clock:
+    """A clock that moves on a fixed amount each time it is read."""
+
+    def __init__(self, step):
+        self.now, self.step = 0.0, step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+
+def test_files_that_already_have_their_text_and_names_to_skip_are_left_alone(sources, capsys):
+    sources.add("one.pdf", pdf([LONG]))
+    sources.add("two.pdf", pdf([LONG + " Two."]))
+    sources.add("three.txt", "Three.")
+    assert sources.run("--skip", "two.pdf", "three.txt") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "one.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "1 converted, 0 skipped, 0 failed",
+    ]
+    assert sources.run() == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "three.txt: copied",
+        "two.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "2 converted, 0 skipped, 0 failed",
+    ]
+    before = sources.text("one.pdf.txt")
+    assert sources.run() == 0
+    assert capsys.readouterr().out.splitlines() == ["0 converted, 0 skipped, 0 failed"]
+    assert sources.text("one.pdf.txt") == before
+
+
+def test_out_puts_the_text_in_another_folder(sources, tmp_path):
+    sources.add("one.md", "One.")
+    elsewhere = tmp_path / "elsewhere"
+    assert sources.run("--out", str(elsewhere)) == 0
+    assert sorted(path.name for path in elsewhere.iterdir()) == [".convert-log.txt", "one.md.txt"]
+    assert [path.name for path in sources.folder.iterdir()] == ["one.md"]
+
+
+def test_a_run_that_runs_out_of_seconds_stops_and_the_next_run_goes_on_from_the_page_cache(
+    sources, capsys
+):
+    many = {"pages": [""] * 6, "images": {str(n): {"text": f"page {n}"} for n in range(1, 7)}}
+    sources.add("scan.pdf", json.dumps(many))
+    sources.add("later.txt", "x" * 2000)  # bigger, so it comes after the PDF
+    # The clock is read before each page; each reading moves it on by 10 seconds.
+    assert sources.run("--no-rotate", "--seconds", "35", clock=Clock(10)) == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "scan.pdf: stopped after 2 of 6 pages: out of time (--seconds 35)",
+        "0 converted, 0 skipped, 0 failed; 2 not finished: run again to go on",
+    ]
+    assert sources.made() == [".scan.pdf.pages.json"]
+    cache = json.loads(sources.text(".scan.pdf.pages.json"))
+    assert cache["done"] == ["page 1", "page 2", None, None, None, None]
+
+    ocr_so_far = len([call for call in sources.tools.calls() if call[0].endswith(".png")])
+    assert sources.run("--no-rotate") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "scan.pdf: 6 pages, 6 read by OCR, 0 turned",
+        "later.txt: copied",
+        "2 converted, 0 skipped, 0 failed",
+    ]
+    assert sources.made() == [".convert-log.txt", "later.txt.txt", "scan.pdf.txt"]
+    # Pages 1 and 2 were not read a second time, and pdftotext was not run again.
+    calls = sources.tools.calls()
+    assert len([call for call in calls if call[0].endswith(".png")]) == ocr_so_far + 4
+    assert len([call for call in calls if call[0] == "-layout"]) == 1
+    assert sources.text("scan.pdf.txt").count("(OCR) ===") == 6
