@@ -23,9 +23,19 @@ IN_RUN = {
     "w:pict": "a drawing",
     "w:object": "a drawing",
     "mc:AlternateContent": "a drawing",
+    "w:commentReference": "a comment marker",
+    "w:fldChar": "a field",
+    "w:instrText": "a field",
 }
 # Children of a run that an edit may pass over: they hold no content.
 TRANSPARENT = {"w:rPr", "w:lastRenderedPageBreak"}
+# Marks that sit between runs. Proofing marks are not listed: Word remakes them.
+BETWEEN_RUNS = {
+    "w:bookmarkStart": "a bookmark",
+    "w:bookmarkEnd": "a bookmark",
+    "w:commentRangeStart": "the start or end of a comment's range",
+    "w:commentRangeEnd": "the start or end of a comment's range",
+}
 
 
 class Piece:
@@ -51,6 +61,8 @@ class Paragraph:
         for child in node.children:
             if child.name == "w:r":
                 self._run(child)
+            elif child.name in BETWEEN_RUNS:
+                self.barriers.append((self._length, BETWEEN_RUNS[child.name]))
 
     def _run(self, run):
         for child in run.children:
@@ -60,3 +72,5 @@ class Paragraph:
                 self._length += len(units)
             elif child.name in IN_RUN:
                 self.barriers.append((self._length, IN_RUN[child.name]))
+            elif child.name not in TRANSPARENT:
+                self.barriers.append((self._length, f"a special character ({child.name})"))
