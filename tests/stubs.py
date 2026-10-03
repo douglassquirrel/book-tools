@@ -213,6 +213,60 @@ else:
 '''
 
 
+# The three programs that read a PDF. In the tests a "PDF" is a small JSON file:
+# {"pages": [text of each page], "images": {"2": {"text": ..., "scores": {"0": 2, "90": 40}}}}
+# and a page "image" is the JSON of that page's entry, which the stand-in tesseract reads.
+COMMON = r'''
+import json, os, sys, time
+
+here = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(here, "control.json")) as file:
+    control = json.load(file)
+args = sys.argv[1:]
+with open(os.path.join(here, "calls.jsonl"), "a") as file:
+    file.write(json.dumps({"args": args, "cwd": os.getcwd()}) + "\n")
+
+
+def source(path):
+    with open(path, encoding="utf-8") as file:
+        return json.load(file)
+
+
+if any(word in " ".join(args) for word in control.get("hang_on", [])):
+    time.sleep(60)
+if any(word in " ".join(args) for word in control.get("fail_on", [])):
+    print("stand-in: could not read the file", file=sys.stderr)
+    sys.exit(1)
+if any(word in " ".join(args) for word in control.get("silent_on", [])):
+    sys.exit(0)
+'''
+
+PDFTOTEXT = COMMON + r'''
+pages = source(args[1])["pages"]            # pdftotext -layout FILE -
+sys.stdout.write("".join(page + "\f" for page in pages))
+'''
+
+PDFTOPPM = COMMON + r'''
+# pdftoppm -f N -l N -scale-to S -gray -png FILE PREFIX
+number = args[args.index("-f") + 1]
+image = source(args[-2]).get("images", {}).get(number)
+if image is not None:
+    with open(f"{args[-1]}-{int(number):02d}.png", "w", encoding="utf-8") as file:
+        json.dump(dict(image, page=int(number)), file)
+'''
+
+TESSERACT = COMMON + r'''
+image = source(args[0])                     # tesseract IMAGE - [tsv]
+turned = str(image.get("turned", 0))
+if args[-1] == "tsv":
+    print("level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext")
+    for _ in range(image.get("scores", {}).get(turned, 0)):
+        print("5\t1\t1\t1\t1\t1\t0\t0\t9\t9\t95\tword")
+else:
+    sys.stdout.write(image.get("text", "") + (f" [read turned {turned}]" if turned != "0" else ""))
+'''
+
+
 class Stub:
     """A stand-in program in a folder of its own, to be put on PATH."""
 
@@ -251,6 +305,34 @@ def pandoc_stub(folder, **control):
 
 def git_stub(folder, **control):
     return Stub(folder, "git", GIT, **control)
+
+
+def pdf_stubs(folder, **control):
+    """Stand-ins for pdftotext, pdftoppm and tesseract, sharing one folder and log."""
+    stub = Stub(folder, "pdftotext", PDFTOTEXT, **control)
+    Stub(folder, "pdftoppm", PDFTOPPM, **control)
+    Stub(folder, "tesseract", TESSERACT, **control)
+    return stub
+
+
+class FakeImage:
+    """What the tests give sources-to-text in place of Pillow's Image: it "turns" a
+    stand-in page image by recording the turn in the file it saves."""
+
+    def __init__(self, data, turned=0):
+        self.data, self.turned = data, turned
+
+    @classmethod
+    def open(cls, path):
+        with open(path, encoding="utf-8") as file:
+            return cls(json.load(file))
+
+    def rotate(self, angle, expand=False):
+        return FakeImage(self.data, (-angle) % 360)
+
+    def save(self, path):
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(dict(self.data, turned=self.turned), file)
 
 
 def backlog_project(folder):
