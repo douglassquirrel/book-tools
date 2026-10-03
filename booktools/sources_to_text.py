@@ -108,8 +108,14 @@ def _redo(job):
     """Convert the named files again, each beside its old text, and say what differs.
     The old text is never replaced: that is for the user to decide."""
     names = [name for name in _sources(job.folder) if name in job.args.redo]
+    failed = 0
     for name in names:
-        outcome = job.convert(name)
+        try:
+            outcome = job.convert(name)
+        except Failure as failure:
+            print(f"{name}: FAILED: {failure}", flush=True)
+            failed += 1
+            continue
         old = os.path.join(job.out, name + ".txt")
         new = job.target(name)
         said = f"redone as {os.path.basename(new)}: "
@@ -129,8 +135,8 @@ def _redo(job):
             else:
                 said += f"differs from {name}.txt"
         print(f"{name}: {said}", flush=True)
-    print(f"{len(names)} redone, 0 failed")
-    return 0
+    print(f"{len(names) - failed} redone, {failed} failed")
+    return 1 if failed else 0
 
 
 def _work(job, waiting):
@@ -153,6 +159,11 @@ def _work(job, waiting):
             except OutOfTime as stopped:
                 print(f"{name}: {stopped}", flush=True)
                 break
+            except Failure as failure:
+                print(f"{name}: FAILED: {failure}", flush=True)
+                job.log(f"FAILED {name}: {failure}")
+                tally["failed"].append(name)
+                continue
             print(f"{name}: {outcome}", flush=True)
             tally["skipped" if outcome.startswith("skipped") else "converted"].append(name)
         finally:
@@ -195,6 +206,10 @@ def _locks(out):
         for name in os.listdir(out)
         if name.startswith(LOCK) and os.path.isdir(os.path.join(out, name))
     )
+
+
+class Failure(Exception):
+    """A file could not be converted; the run goes on to the next."""
 
 
 class OutOfTime(Exception):
@@ -254,12 +269,15 @@ class Job:
             return "copied"
         if kind == "epub":
             partial = self.target(name) + ".partial"
-            subprocess.run(
-                ["pandoc", source, "-t", "plain", "--wrap=none", "-o", partial],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-            )
-            os.replace(partial, self.target(name))
+            try:
+                self.call(
+                    ["pandoc", source, "-t", "plain", "--wrap=none", "-o", partial],
+                    self.args.timeout,
+                )
+                os.replace(partial, self.target(name))
+            finally:
+                if os.path.exists(partial):
+                    os.remove(partial)
             self.log(f"{name} epub")
             return "converted with pandoc"
         if kind == "pdf":
@@ -273,11 +291,9 @@ class Job:
             with open(cache, encoding="utf-8") as file:
                 state = json.load(file)
         else:
-            done = subprocess.run(
-                ["pdftotext", "-layout", source, "-"],
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-            )
+            done = self.call(["pdftotext", "-layout", source, "-"], self.args.timeout)
+            if not done.stdout:
+                raise Failure("pdftotext printed nothing")
             pages = split_pages(done.stdout.decode("utf-8", "replace"))
             total = len(pages)
             state = {
@@ -299,7 +315,12 @@ class Job:
                     f" (--seconds {self.args.seconds:g})"
                 )
             if needs_ocr(page, self.args.min_chars):
-                read = self.read_image(source, index + 1)
+                try:
+                    read = self.read_image(source, index + 1)
+                except Failure as failure:
+                    if not self.redo and any(text is not None for text in done):
+                        self.save(cache, state)  # the next run goes on from here
+                    raise Failure(f"page {index + 1}: {failure}") from None
                 if read is not None:
                     page, turned[index] = read
                     ocr[index] = True
@@ -320,17 +341,14 @@ class Job:
         """Read one page from its image: (the text, the turn it was read at), or None
         if no image of the page could be made."""
         prefix = os.path.join(self.scratch, "pg")
-        subprocess.run(
-            ["pdftoppm", "-f", str(number), "-l", str(number), "-scale-to",
-             str(self.args.dpi_scale), "-gray", "-png", source, prefix],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-        )  # fmt: skip
-        images = sorted(glob.glob(prefix + "*.png"))
-        if not images:
-            return None
         try:
-            return self.read_best(images[0])
+            self.call(
+                ["pdftoppm", "-f", str(number), "-l", str(number), "-scale-to",
+                 str(self.args.dpi_scale), "-gray", "-png", source, prefix],
+                self.args.timeout,
+            )  # fmt: skip
+            images = sorted(glob.glob(prefix + "*.png"))
+            return self.read_best(images[0]) if images else None
         finally:
             for image in glob.glob(prefix + "*"):
                 os.remove(image)
@@ -354,10 +372,22 @@ class Job:
         return self.tesseract(turned), turn
 
     def tesseract(self, image, *more):
-        done = subprocess.run(
-            ["tesseract", image, "-", *more], stdin=subprocess.DEVNULL, capture_output=True
-        )
+        done = self.call(["tesseract", image, "-", *more], self.args.ocr_timeout)
         return done.stdout.decode("utf-8", "replace")
+
+    def call(self, command, timeout):
+        """Run one outside program. A failure of it is a Failure of the file in hand."""
+        program = command[0]
+        try:
+            done = subprocess.run(
+                command, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired:
+            raise Failure(f"{program} did not finish within {timeout:g} seconds") from None
+        if done.returncode != 0:
+            said = done.stderr.decode("utf-8", "replace").strip().splitlines()
+            raise Failure(f"{program} failed: {said[0] if said else f'exit {done.returncode}'}")
+        return done
 
     def write(self, name, data):
         """Write a file's text whole: under another name first, which then takes its place."""
@@ -425,6 +455,20 @@ def _parser():
         "--no-rotate", action="store_true", help="read each page as it is; try no turns"
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120,
+        metavar="SECONDS",
+        help="how long pdftotext, pdftoppm or pandoc may take over one call (default 120)",
+    )
+    parser.add_argument(
+        "--ocr-timeout",
+        type=float,
+        default=600,
+        metavar="SECONDS",
+        help="how long tesseract may take over one page (default 600)",
+    )
     return parser
 
 

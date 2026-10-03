@@ -232,12 +232,18 @@ def source(path):
         return json.load(file)
 
 
-if any(word in " ".join(args) for word in control.get("hang_on", [])):
+# What this run looks like, for the control file to match against: the program's
+# name and its arguments.
+run = os.path.basename(sys.argv[0]) + " " + " ".join(args)
+if any(word in run for word in control.get("hang_on", [])):
     time.sleep(60)
-if any(word in " ".join(args) for word in control.get("fail_on", [])):
+if any(word in run for word in control.get("fail_on", [])):
     print("stand-in: could not read the file", file=sys.stderr)
     sys.exit(1)
-if any(word in " ".join(args) for word in control.get("silent_on", [])):
+if any(word in run for word in control.get("silent_on", [])):
+    sys.exit(0)
+if any(word in run for word in control.get("garbage_on", [])):
+    sys.stdout.buffer.write(b"\xff\xfe not text at all, and well over eighty bytes of it:" + b" x" * 60 + b"\f")
     sys.exit(0)
 '''
 

@@ -340,3 +340,76 @@ def test_redo_of_a_name_that_is_not_a_source_is_refused(sources, capsys):
         f"sources-to-text: --redo nine.pdf: there is no such file in {sources.folder}"
     )
     assert not sources.out.exists() or sources.made() == []
+
+
+def test_a_file_that_fails_is_reported_and_the_run_goes_on_and_exits_1(sources, capsys):
+    sources.add("a-good.pdf", pdf([LONG]))
+    sources.add("b-bad.pdf", pdf([LONG, LONG]))
+    sources.add("c-also-good.pdf", pdf([LONG, LONG, LONG]))
+    sources.tools.control(fail_on=["pdftotext -layout " + str(sources.folder / "b-bad.pdf")])
+    assert sources.run() == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "a-good.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "b-bad.pdf: FAILED: pdftotext failed: stand-in: could not read the file",
+        "c-also-good.pdf: 3 pages, 0 read by OCR, 0 turned",
+        "2 converted, 0 skipped, 1 failed",
+    ]
+    assert sources.made() == [".convert-log.txt", "a-good.pdf.txt", "c-also-good.pdf.txt"]
+    assert sources.text(".convert-log.txt").splitlines()[1] == (
+        "FAILED b-bad.pdf: pdftotext failed: stand-in: could not read the file"
+    )
+
+
+@pytest.mark.parametrize(
+    "control, said",
+    [
+        ({"silent_on": ["pdftotext"]}, "pdftotext printed nothing"),
+        ({"hang_on": ["pdftotext"]}, "pdftotext did not finish within 2 seconds"),
+        ({"fail_on": ["pdftoppm"]}, "page 2: pdftoppm failed: stand-in: could not read the file"),
+        ({"hang_on": ["pdftoppm"]}, "page 2: pdftoppm did not finish within 2 seconds"),
+        ({"fail_on": ["tesseract"]}, "page 2: tesseract failed: stand-in: could not read the file"),
+        ({"hang_on": ["tesseract"]}, "page 2: tesseract did not finish within 3 seconds"),
+    ],
+)
+def test_each_way_a_program_can_fail_on_a_pdf(sources, capsys, control, said):
+    sources.add("scan.pdf", json.dumps(SCAN))
+    sources.tools.control(**control)
+    assert sources.run("--no-rotate", "--timeout", "2", "--ocr-timeout", "3") == 1
+    assert capsys.readouterr().out.splitlines() == [
+        f"scan.pdf: FAILED: {said}",
+        "0 converted, 0 skipped, 1 failed",
+    ]
+    assert not (sources.out / "scan.pdf.txt").exists()
+    assert not [name for name in sources.made() if "partial" in name or "lock" in name]
+    assert list(sources.scratch.iterdir()) == []
+
+
+def test_bytes_that_are_not_text_are_kept_as_replacement_characters_not_a_failure(sources):
+    sources.add("odd.pdf", pdf([LONG]))
+    sources.tools.control(garbage_on=["pdftotext"])
+    assert sources.run() == 0
+    assert sources.text("odd.pdf.txt").startswith("\n=== PDF page 1 of 1 ===\n�� not text")
+
+
+def test_an_epub_pandoc_cannot_read_fails_without_leaving_anything(sources, capsys):
+    sources.add("book.epub", "x")
+    sources.pandoc.control(fail=True)
+    assert sources.run() == 1
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "book.epub: FAILED: pandoc failed: pandoc: could not read the file"
+    )
+    assert sources.made() == [".convert-log.txt"]
+
+
+def test_a_failure_part_way_through_a_pdf_keeps_the_pages_done_for_the_next_run(sources, capsys):
+    many = {"pages": [""] * 3, "images": {str(n): {"text": f"page {n}"} for n in range(1, 4)}}
+    sources.add("scan.pdf", json.dumps(many))
+    sources.tools.control(fail_on=["-f 3 "])  # pdftoppm fails on the third page
+    assert sources.run("--no-rotate") == 1
+    assert json.loads(sources.text(".scan.pdf.pages.json"))["done"] == ["page 1", "page 2", None]
+    sources.tools.control()
+    capsys.readouterr()
+    assert sources.run("--no-rotate") == 0
+    assert capsys.readouterr().out.splitlines()[0] == "scan.pdf: 3 pages, 3 read by OCR, 0 turned"
+    assert sources.made() == [".convert-log.txt", "scan.pdf.txt"]
