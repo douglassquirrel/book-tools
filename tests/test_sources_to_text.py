@@ -161,7 +161,8 @@ def test_without_pillow_pages_are_read_as_they_are_and_the_run_says_so(sources, 
     assert captured.err.splitlines() == [
         "sources-to-text: Pillow is not installed, so each page is read as it stands and one"
         " scanned sideways or upside down will not be noticed"
-        " (to install it: python3 -m pip install --user Pillow)"
+        " (to install it: brew install pillow; or, for a Python that is not Homebrew's,"
+        " python3 -m pip install --user Pillow)"
     ]
     assert "=== PDF page 3 of 4 (OCR) ===\nA table set sideways." in sources.text("scan.pdf.txt")
 

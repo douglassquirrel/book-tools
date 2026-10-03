@@ -72,7 +72,8 @@ def _run(args, clock, image, given):
             print(
                 "sources-to-text: Pillow is not installed, so each page is read as it stands"
                 " and one scanned sideways or upside down will not be noticed"
-                " (to install it: python3 -m pip install --user Pillow)",
+                " (to install it: brew install pillow; or, for a Python that is not"
+                " Homebrew's, python3 -m pip install --user Pillow)",
                 file=sys.stderr,
             )
     if args.redo:

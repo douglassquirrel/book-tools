@@ -28,7 +28,8 @@ writes over the file it was given: the manuscript is only ever read.
 - **Backlog, which is yours to install**: `brew install backlog-md` (or `npm i -g backlog.md`).
   Needed by `file-tickets` only. The kit never installs, updates or configures Backlog.
   Tested with Backlog 1.53.0.
-- **Pillow, optional**: `python3 -m pip install --user Pillow`. With it, `sources-to-text`
+- **Pillow, optional**: `brew install pillow` (Homebrew's Python refuses `pip install`; for
+  a Python that is not Homebrew's, `python3 -m pip install --user Pillow`). With it, `sources-to-text`
   notices a page scanned sideways or upside down; without it each page is read as it stands
   and the command says so.
 
@@ -600,8 +601,8 @@ read-only on your book folder; write only into a scratch folder.
    found where you expect. Then apply them, and open the copy in Word.
 5. `note-map` over three consecutive saves with the registry in a scratch folder: every ID
    carried, none unclear.
-6. On a machine with Pillow, `sources-to-text` on a PDF with a page scanned sideways: the
-   page's header says it was turned.
+6. With Pillow installed, `sources-to-text` on a PDF with a page scanned sideways: the
+   page's header says it was turned, and the text under it reads properly.
 
 ## Known limitations
 
@@ -648,6 +649,9 @@ know. The first version of each command was built on 3 October 2026.
   `--expect`, and exits 1 when any paragraph does not match.
 - 3 October 2026: `sources-to-text` copies `.txt` sources as well as `.md`; a program that
   fails now fails the file, with the reason, instead of writing an empty page.
+- 3 October 2026: page turning in `sources-to-text` was checked with the real Pillow
+  (12.3.0) and Tesseract (5.5.3): pages scanned sideways and upside down are found and
+  read. On a map whose labels run in every direction the choice of turn is a toss-up.
 - 3 October 2026: `file-tickets` checks the priority, labels, milestone and status of each
   ticket it reads back, as well as its title, description and comments.
 
