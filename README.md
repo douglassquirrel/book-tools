@@ -5,8 +5,9 @@ Word, with an AI assistant doing the checking and record-keeping and
 [Backlog.md](https://github.com/MrLesk/Backlog.md) as the issue tracker. It is not tied to any
 one book or publisher.
 
-**Status: one command of six works.** `propose-edits` is built and tested; the other five
-are not written yet. This README will be replaced by full instructions when all six exist.
+**Status: two commands of six work.** `propose-edits` and `file-tickets` are built and
+tested; the other four are not written yet. This README will be replaced by full
+instructions when all six exist.
 
 ## Using `propose-edits` now
 
@@ -59,6 +60,48 @@ An edit is refused, and nothing is written, when its text is not found, is found
 once without `occurrence`, overlaps another edit, runs across two paragraphs, crosses a
 note marker, tab, line break, picture or the edge of a link, or touches a change someone
 has already tracked.
+
+## Using `file-tickets` now
+
+It needs [Backlog.md](https://github.com/MrLesk/Backlog.md), which is yours to install
+(`brew install backlog-md`, or `npm i -g backlog.md`; tested with version 1.53.0), and a
+folder where `backlog init` has been run.
+
+    ./file-tickets TICKETS.json --project FOLDER --dry-run
+    ./file-tickets TICKETS.json --project FOLDER --results results.json
+
+A tickets file is a JSON list; only `title` is required:
+
+```json
+[
+  {
+    "title": "Ch. 3: Table 3.1 row 4 cites the 2019 figure",
+    "description": "**Book now says:** …",
+    "priority": "medium",
+    "labels": ["ch3", "fact-check"],
+    "milestone": "First feedback",
+    "status": "To Do",
+    "comments": [{"author": "Claude", "text": "Source: …"}]
+  }
+]
+```
+
+Each ticket is created, its comments added, and then read back and compared with what was
+sent, so that text mangled on the way is caught. Every character reaches Backlog untouched
+(quotes, backticks and dollar signs included), because nothing goes through a shell. One
+line is printed per ticket:
+
+```
+TASK-1  filed  Ch. 3: a "quoted" `tick` $HOME title
+TASK-2  filed  -5 degrees: a title starting with a dash
+-  FAILED  Bad status (backlog said: Invalid status: Nonsense. Valid statuses are: To Do, In Progress, Done)
+2 filed, 1 failed, 0 skipped
+```
+
+With `--results`, each ticket's id and outcome is recorded as the batch goes; running the
+same command again finishes an interrupted batch without filing anything twice.
+`--skip-existing` skips a ticket whose exact title is already in the project.
+`./file-tickets --help` lists the other flags.
 
 ## What it will do
 
