@@ -379,3 +379,37 @@ def test_edits_in_a_table_cell_and_in_a_footnote(tmp_path, capsys):
         "any | Chapter 2, note 2 (endnote:2) |  [Ibid → Ibidem]. | | PASS",
         "foot | Chapter 1, note 1 (footnote:1) |  [Imperial → British] pints. | | PASS",
     ]
+
+
+def test_an_interruption_while_the_copy_is_put_in_place_leaves_no_part_written_file(
+    book, capsys, monkeypatch
+):
+    import shutil
+
+    def cut_short(source, target, **_):
+        with open(target, "wb") as file:
+            file.write(b"half a file")
+        raise KeyboardInterrupt
+
+    # However the finished copy is carried to its place, it is cut off half way.
+    monkeypatch.setattr(shutil, "copyfile", cut_short)
+    monkeypatch.setattr(shutil, "move", cut_short)
+    assert book.run() == 130
+    assert [path.name for path in book.out.parent.iterdir()] == []
+    assert capsys.readouterr().err.splitlines() == ["propose-edits: interrupted; nothing written"]
+
+
+def test_with_force_an_interrupted_run_leaves_the_earlier_file_as_it_was(book, monkeypatch):
+    import shutil
+
+    def cut_short(source, target, **_):
+        with open(target, "wb") as file:
+            file.write(b"half a file")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(shutil, "copyfile", cut_short)
+    monkeypatch.setattr(shutil, "move", cut_short)
+    book.out.write_text("the earlier copy")
+    assert book.run("--force") == 130
+    assert book.out.read_text() == "the earlier copy"
+    assert [path.name for path in book.out.parent.iterdir()] == ["new.docx"]

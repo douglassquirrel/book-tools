@@ -108,7 +108,7 @@ def _run(args, now):
         for name, passed, detail in results:
             print(f"{name}: {'PASS' if passed else 'FAIL'}: {detail}")
         if sound or args.keep_on_failure:
-            shutil.move(copy, args.out)
+            _install(copy, args.out)
     if not sound:
         outcome = (
             f"the failed copy was kept at {args.out}"
@@ -119,6 +119,18 @@ def _run(args, now):
         return 1
     print(f"wrote {args.out}")
     return 0
+
+def _install(copy, out):
+    """Put the finished copy at `out` in one step, so that `out` is never seen half
+    written: the bytes go to a name beside it, which then takes its place."""
+    partial = f"{out}.partial-{os.getpid()}"
+    try:
+        shutil.copyfile(copy, partial)
+        os.replace(partial, out)
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
+
 
 def _count(number, noun):
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
