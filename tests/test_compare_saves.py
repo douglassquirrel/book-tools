@@ -317,8 +317,13 @@ def test_git_refusals_name_the_cause(saves, repository, capsys, monkeypatch, tmp
 
 
 def test_a_git_that_does_not_answer_exits_1(saves, repository, capsys):
+    import time
+
     saves.git.control(hang=True)
+    started = time.monotonic()
     assert saves.run("--git", "HEAD~1", str(repository.file), "--timeout", "2") == 1
+    # The stand-in hangs for a minute; the limit asked for is what must end the wait.
+    assert time.monotonic() - started < 20
     assert capsys.readouterr().err.splitlines() == [
         "compare-saves: git did not answer within 2 seconds"
     ]
