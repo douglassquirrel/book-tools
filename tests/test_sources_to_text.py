@@ -243,3 +243,48 @@ def test_a_run_that_runs_out_of_seconds_stops_and_the_next_run_goes_on_from_the_
     assert len([call for call in calls if call[0].endswith(".png")]) == ocr_so_far + 4
     assert len([call for call in calls if call[0] == "-layout"]) == 1
     assert sources.text("scan.pdf.txt").count("(OCR) ===") == 6
+
+
+def test_a_lock_left_by_another_run_is_reported_and_its_file_left_alone(sources, capsys):
+    sources.add("one.pdf", pdf([LONG]))
+    sources.add("two.pdf", pdf([LONG + " Two."]))
+    sources.out.mkdir()
+    lock = sources.out / ".lock-one.pdf"
+    lock.mkdir()
+    assert sources.run() == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "two.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "1 converted, 0 skipped, 0 failed; 1 left locked",
+    ]
+    assert captured.err.splitlines()[-1] == (
+        "sources-to-text: one.pdf is locked (.lock-one.pdf): another run may be working on it."
+        " If none is, run again with --clear-locks"
+    )
+    assert lock.is_dir() and not (sources.out / "one.pdf.txt").exists()
+
+    assert sources.run("--clear-locks") == 0
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "cleared the lock .lock-one.pdf",
+        "one.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "1 converted, 0 skipped, 0 failed",
+    ]
+    assert sources.made() == [".convert-log.txt", "one.pdf.txt", "two.pdf.txt"]  # no lock left
+
+
+def test_several_workers_convert_every_file_once_between_them(sources, capfd):
+    for number in range(1, 7):
+        sources.add(f"s{number}.pdf", pdf([LONG + f" Source {number}." * number]))
+    assert sources.run("--workers", "3", "--no-rotate") == 0
+    out = capfd.readouterr().out.splitlines()  # the workers are processes of their own
+    assert sorted(out[:-1]) == [f"s{n}.pdf: 1 pages, 0 read by OCR, 0 turned" for n in range(1, 7)]
+    assert out[-1] == "6 converted, 0 skipped, 0 failed"
+    assert sources.made() == [".convert-log.txt"] + [f"s{n}.pdf.txt" for n in range(1, 7)]
+    # Each file was given to pdftotext exactly once, whichever worker took it.
+    given = sorted(call[1] for call in sources.tools.calls() if call[0] == "-layout")
+    assert given == sorted(str(sources.folder / f"s{n}.pdf") for n in range(1, 7))
+    assert sorted(sources.text(".convert-log.txt").splitlines()) == [
+        f"s{n}.pdf pages=1 ocr=0 turned=0" for n in range(1, 7)
+    ]
+    assert list(sources.scratch.iterdir()) == []

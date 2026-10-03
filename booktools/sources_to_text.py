@@ -23,30 +23,38 @@ from booktools.sources import (
 
 INDEXES = ("SOURCES.md", "PDF-COVERAGE.md", ".DS_Store")
 LOG = ".convert-log.txt"
+LOCK = ".lock-"
 
 
 def main(argv=None, clock=None, image=None):
     """Run the command; return its exit code. `clock` gives the time in seconds and
     `image` stands in for Pillow's Image module (both for tests)."""
+    given = list(sys.argv[1:] if argv is None else argv)
     return cli.run(
         "sources-to-text",
         _parser(),
-        lambda args: _run(args, clock or time.monotonic, image),
+        lambda args: _run(args, clock or time.monotonic, image, given),
         argv,
     )
 
 
-def _run(args, clock, image):
+def _run(args, clock, image, given):
     folder = args.sources
     if not os.path.isdir(folder):
         raise Refusal(f"{folder} is not a folder")
     out = args.out or os.path.join(folder, "text")
     os.makedirs(out, exist_ok=True)
+    worker = args.worker_report is not None  # one of several processes of a larger run
+    if args.clear_locks and not worker:
+        for lock in _locks(out):
+            os.rmdir(os.path.join(out, lock))
+            print(f"cleared the lock {lock}")
+    stale = set() if worker else {lock[len(LOCK) :] for lock in _locks(out)}
     if args.no_rotate:
         image = None
     elif image is None:
         image = _pillow()
-        if image is None:
+        if image is None and not worker:
             print(
                 "sources-to-text: Pillow is not installed, so each page is read as it stands"
                 " and one scanned sideways or upside down will not be noticed"
@@ -54,31 +62,103 @@ def _run(args, clock, image):
                 file=sys.stderr,
             )
     deadline = clock() + args.seconds if args.seconds is not None else None
-    converted = skipped = failed = unfinished = 0
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         job = Job(folder, out, scratch, args, image, clock, deadline)
         names = [name for name in _sources(folder) if name not in args.skip]
         waiting = [name for name in names if not os.path.exists(job.target(name))]
-        for position, name in enumerate(waiting):
-            if job.out_of_time():
-                unfinished = len(waiting) - position
-                break
+        if args.workers > 1 and not worker:
+            tally = _workers(args.workers, given, scratch)
+        else:
+            tally = _work(job, waiting)
+    if worker:
+        with open(args.worker_report, "w", encoding="utf-8") as file:
+            json.dump(tally, file)
+        return 0
+    locked = [name for name in waiting if name in stale and not os.path.exists(job.target(name))]
+    settled = set(tally["skipped"]) | set(tally["failed"]) | set(locked)
+    unfinished = [
+        name for name in waiting if name not in settled and not os.path.exists(job.target(name))
+    ]
+    summary = (
+        f"{len(tally['converted'])} converted, {len(tally['skipped'])} skipped,"
+        f" {len(tally['failed'])} failed"
+    )
+    if unfinished:
+        summary += f"; {len(unfinished)} not finished: run again to go on"
+    if locked:
+        summary += f"; {len(locked)} left locked"
+    print(summary)
+    for name in locked:
+        print(
+            f"sources-to-text: {name} is locked ({LOCK}{name}): another run may be working"
+            " on it. If none is, run again with --clear-locks",
+            file=sys.stderr,
+        )
+    return 1 if tally["failed"] or locked else 0
+
+
+def _work(job, waiting):
+    """Convert each waiting file that no other run has claimed; return what became of
+    each, by name."""
+    tally = {"converted": [], "skipped": [], "failed": []}
+    for name in waiting:
+        if job.out_of_time():
+            break
+        lock = os.path.join(job.out, LOCK + name)
+        try:
+            os.mkdir(lock)
+        except FileExistsError:
+            continue  # another worker, or another run, has it
+        try:
+            if os.path.exists(job.target(name)):
+                continue  # finished by another worker a moment ago
             try:
                 outcome = job.convert(name)
             except OutOfTime as stopped:
-                print(f"{name}: {stopped}")
-                unfinished = len(waiting) - position
+                print(f"{name}: {stopped}", flush=True)
                 break
-            print(f"{name}: {outcome}")
-            if outcome.startswith("skipped"):
-                skipped += 1
-            else:
-                converted += 1
-    summary = f"{converted} converted, {skipped} skipped, {failed} failed"
-    if unfinished:
-        summary += f"; {unfinished} not finished: run again to go on"
-    print(summary)
-    return 0
+            print(f"{name}: {outcome}", flush=True)
+            tally["skipped" if outcome.startswith("skipped") else "converted"].append(name)
+        finally:
+            os.rmdir(lock)
+    return tally
+
+
+def _workers(count, given, scratch):
+    """Run `count` processes of this command side by side; they share the work through
+    the lock folders. Returns their tallies added together."""
+    package = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [package, env.get("PYTHONPATH")]))
+    reports = [os.path.join(scratch, f"worker-{number}.json") for number in range(count)]
+    running = [
+        subprocess.Popen(
+            [sys.executable, "-m", "booktools.sources_to_text", *given, "--worker-report", report],
+            env=env,
+            stdin=subprocess.DEVNULL,
+        )
+        for report in reports
+    ]
+    for process in running:
+        process.wait()
+    tally = {"converted": [], "skipped": [], "failed": []}
+    for report in reports:
+        if os.path.exists(report):
+            with open(report, encoding="utf-8") as file:
+                for outcome, names in json.load(file).items():
+                    tally[outcome].extend(names)
+    # A kind that is not converted is passed over by every worker: count it once.
+    tally["skipped"] = sorted(set(tally["skipped"]))
+    return tally
+
+
+def _locks(out):
+    """The lock folders now in the output folder."""
+    return sorted(
+        name
+        for name in os.listdir(out)
+        if name.startswith(LOCK) and os.path.isdir(os.path.join(out, name))
+    )
 
 
 class OutOfTime(Exception):
@@ -261,6 +341,19 @@ def _parser():
         "--out", metavar="DIR", help="where the text goes (default: SOURCES_DIR/text)"
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="how many processes share the work (default 1)",
+    )
+    parser.add_argument(
+        "--clear-locks",
+        action="store_true",
+        help="remove locks left in the output folder by a run that was killed",
+    )
+    parser.add_argument("--worker-report", help=argparse.SUPPRESS)
+    parser.add_argument(
         "--seconds",
         type=float,
         metavar="S",
@@ -288,3 +381,7 @@ def _parser():
     )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser
+
+
+if __name__ == "__main__":
+    sys.exit(main())
