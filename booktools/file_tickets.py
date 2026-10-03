@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shlex
 import shutil
 import subprocess
 
@@ -19,6 +20,7 @@ from booktools.tickets import (
 )
 
 TESTED_WITH = "1.53.0"
+LIST = ["backlog", "task", "list", "--json"]
 
 
 def main(argv=None):
@@ -42,6 +44,17 @@ def _run(args):
             f"{args.project} is not a Backlog project (it has no backlog/config.yml);"
             " run backlog init there first"
         )
+    if args.dry_run:
+        if args.skip_existing:
+            print(shlex.join(LIST))
+        for ticket in tickets:
+            print(shlex.join(create_command(ticket)))
+            for author, text in ticket.comments:
+                print(shlex.join(comment_command("ID", author, text)))
+            print(shlex.join(view_command("ID")))
+        count = "1 ticket" if len(tickets) == 1 else f"{len(tickets)} tickets"
+        print(f"dry run: {count} would be filed in {args.project}; nothing run")
+        return 0
     if shutil.which("backlog") is None:
         raise Refusal(
             "the backlog command was not found. Backlog is yours to install:"

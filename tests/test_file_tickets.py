@@ -179,3 +179,26 @@ def test_a_usage_error_exits_2_and_help_exits_0(capsys):
     for flag in ("TICKETS.json", "--project", "--dry-run", "--results", "--skip-existing",
                  "--ignore-locks", "--timeout"):
         assert flag in out
+
+
+def test_dry_run_prints_each_command_quoted_for_reading_and_runs_nothing(batch, capsys, monkeypatch, tmp_path):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))  # a dry run does not need backlog at all
+    assert batch.run("--dry-run", "--skip-existing") == 0
+    quoted = "'He said \"no\" & `ran` $(rm -rf ~) $HOME '\"'\"'x'\"'\"' \\ \nsecond line \U0001f600'"
+    assert capsys.readouterr().out == "\n".join(
+        [
+            "backlog task list --json",
+            f"backlog task create -d {quoted} --priority medium -l ch3,fact-check-2"
+            " -m 'First feedback' -s 'To Do' -- 'Ch. 3: the 2019 figure'",
+            "backlog task edit ID --comment 'Source: the log' --comment-author Claude",
+            "backlog task edit ID --comment 'A second'",
+            "backlog task view ID --json",
+            "backlog task create -- 'Only a title'",
+            "backlog task view ID --json",
+            f"dry run: 2 tickets would be filed in {batch.project}; nothing run",
+            "",
+        ]
+    )
+    assert batch.backlog.calls() == []
