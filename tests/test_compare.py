@@ -42,3 +42,88 @@ def test_a_paragraph_replaced_by_an_unrelated_one_is_removed_and_added():
 
 def test_identical_paragraphs_are_paired_in_order():
     assert pair(["", A, "", ""], ["", A, ""]) == [(0, 0), (1, 1), (2, 2), (3, None)]
+
+
+def para(text, formatting="", properties=""):
+    return (properties, [(char, formatting) for char in text])
+
+
+def lines(old, new, **more):
+    from booktools.compare import differences
+
+    return differences("7", old, new, **more)
+
+
+LONG = "At the start of a long paragraph, the chat window isn’t where the value is, and so on."
+
+
+def test_paragraphs_that_are_the_same_give_no_lines():
+    assert lines(para("Same.", "b"), para("Same.", "b")) == ([], 0)
+
+
+def test_a_text_change_shows_each_differing_span_with_25_characters_either_side():
+    # The spans are those Python's sequence matcher finds, letter by letter.
+    new = LONG.replace("isn’t", "is not").replace("At the", "At  the")
+    assert lines(para(LONG), para(new)) == (
+        [
+            "TEXT 7: insert 'At the start of a long para' -> 'At  the start of a long para'",
+            "TEXT 7: insert 'graph, the chat window isn’t where the value is, a'"
+            " -> 'graph, the chat window is not where the value is, a'",
+            "TEXT 7: replace 'raph, the chat window isn’t where the value is, and'"
+            " -> 'aph, the chat window is not where the value is, and'",
+        ],
+        1,
+    )
+
+
+def test_a_change_of_paragraph_properties_shows_both():
+    old = para("Centred text that runs on for more than fifty characters in all.", properties="<w:pPr><w:jc w:val=\"center\"/></w:pPr>")
+    new = para("Centred text that runs on for more than fifty characters in all.")
+    assert lines(old, new) == (
+        [
+            "PARA-PROPS 7: 'Centred text that runs on for more than fifty char'\n"
+            '   old <w:pPr><w:jc w:val="center"/></w:pPr>\n'
+            "   new ",
+        ],
+        1,
+    )
+
+
+def test_the_same_text_in_different_formatting_says_how_many_characters_and_shows_the_first():
+    old = ("", [(c, "") for c in "She wrote every figure in a "] + [(c, "b") for c in "large"] + [(c, "") for c in " ledger."])
+    new = para("She wrote every figure in a large ledger.")
+    assert lines(old, new) == (
+        ["FORMAT 7: 5 chars, e.g. at 'e every figure in a large ledger.': old[b] new[]"],
+        1,
+    )
+
+
+def test_a_font_name_listed_to_be_ignored_is_reported_apart_and_only_then():
+    old = para("A caption.", "i,font=Times-Roman")
+    new = para("A caption.", "i")
+    assert lines(old, new) == (
+        ["FORMAT 7: 10 chars, e.g. at 'A caption.': old[i,font=Times-Roman] new[i]"],
+        1,
+    )
+    assert lines(old, new, ignore_fonts=["Arial", "Times-Roman"]) == (
+        ["FONT-NAME-ONLY 7: 10 chars, e.g. at 'A caption.': old[i,font=Times-Roman] new[i]"],
+        1,
+    )
+    # With another difference as well, it is a formatting change, and the example
+    # shown is a character that differs in more than the font name.
+    mixed = ("", [("A", "i,font=Times-Roman")] + [(c, "b,font=Times-Roman") for c in " caption."])
+    assert lines(mixed, new, ignore_fonts=["Times-Roman"]) == (
+        ["FORMAT 7: 10 chars, e.g. at 'A caption.': old[b,font=Times-Roman] new[i]"],
+        1,
+    )
+
+
+def test_properties_and_text_both_changed_count_as_two():
+    old = para("One.", properties="<w:pPr><w:keepNext/></w:pPr>")
+    assert lines(old, para("Two.")) == (
+        [
+            "PARA-PROPS 7: 'One.'\n   old <w:pPr><w:keepNext/></w:pPr>\n   new ",
+            "TEXT 7: replace 'One.' -> 'Two.'",
+        ],
+        2,
+    )

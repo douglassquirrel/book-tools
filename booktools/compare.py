@@ -64,3 +64,56 @@ def _gap(old, new, i1, i2, j1, j2):
             pairs.append((None, j1 + j))
             j += 1
     return pairs
+
+
+def differences(label, old, new, ignore_fonts=()):
+    """The report lines for one pair of paragraphs, each a (properties, characters)
+    pair as `formats.paragraphs` gives; and how many differences they count as.
+
+    `label` is the paragraph's index as it is to be shown.
+    """
+    (old_properties, old_chars), (new_properties, new_chars) = old, new
+    old_text = "".join(char for char, _ in old_chars)
+    new_text = "".join(char for char, _ in new_chars)
+    lines = []
+    count = 0
+    if old_properties != new_properties:
+        count += 1
+        lines.append(
+            f"PARA-PROPS {label}: {old_text[:50]!r}\n"
+            f"   old {old_properties[:300]}\n   new {new_properties[:300]}"
+        )
+    if old_text != new_text:
+        count += 1
+        matcher = difflib.SequenceMatcher(None, old_text, new_text)
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag != "equal":
+                before = old_text[max(0, i1 - 25) : i2 + 25]
+                after = new_text[max(0, j1 - 25) : j2 + 25]
+                lines.append(f"TEXT {label}: {tag} {before!r} -> {after!r}")
+    elif old_chars != new_chars:
+        count += 1
+        # Same text, different formatting: say how much and show the first place.
+        changed = [
+            (at, was, now)
+            for at, ((_, was), (_, now)) in enumerate(zip(old_chars, new_chars))
+            if was != now
+        ]
+        beyond_fonts = [
+            item
+            for item in changed
+            if _without(item[1], ignore_fonts) != _without(item[2], ignore_fonts)
+        ]
+        kind = "FORMAT" if beyond_fonts else "FONT-NAME-ONLY"
+        at, was, now = (beyond_fonts or changed)[0]
+        around = old_text[max(0, at - 20) : at + 20]
+        lines.append(
+            f"{kind} {label}: {len(changed)} chars, e.g. at {around!r}: old[{was}] new[{now}]"
+        )
+    return lines, count
+
+
+def _without(signature, fonts):
+    """A formatting signature with the font names in `fonts` left out."""
+    ignored = {f"font={font}" for font in fonts}
+    return ",".join(part for part in signature.split(",") if part not in ignored)
