@@ -112,3 +112,52 @@ def test_reports_structure_then_paragraphs_then_words(saves, capsys):
         ["-f", "docx", "-t", "markdown-smart", "--wrap=none", str(saves.old)],
         ["-f", "docx", "-t", "markdown-smart", "--wrap=none", str(saves.new)],
     ]
+
+
+def snapshot(folder):
+    return {path.name: path.read_bytes() for path in folder.iterdir()}
+
+
+def test_identical_saves_show_no_difference_anywhere(saves, capsys):
+    assert saves.run(str(saves.old), str(saves.old)) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[7] == "parts that differ: none"
+    assert out[9] == "paragraphs: 9 | 9"
+    assert [line for line in out if line.startswith("differing")] == ["differing paragraphs 0"] * 3
+    assert out[-2:] == ["== Text diff (body and notes, as pandoc reads them)", "no differences"]
+
+
+def test_nothing_is_written_beside_the_saves_or_left_in_the_scratch_folder(saves):
+    before = snapshot(saves.folder)
+    assert saves.compare() == 0
+    assert snapshot(saves.folder) == before
+    assert list(saves.scratch.iterdir()) == []
+
+
+def test_a_font_name_to_ignore_is_reported_as_font_name_only(saves, capsys):
+    assert saves.compare("--ignore-font", "Arial", "--ignore-font", "Times-Roman") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "FONT-NAME-ONLY 5: 30 chars, e.g. at 'A caption set in ano': old[font=Times-Roman] new[]" in out
+    assert "FORMAT 3: 5 chars, e.g. at 'e every figure in a large ledger.{footno': old[b] new[]" in out
+
+
+def test_no_text_diff_leaves_pandoc_out_and_says_so(saves, capsys, monkeypatch, tmp_path):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))  # no pandoc at all
+    assert saves.compare("--no-text-diff") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:3] == [f"old: {saves.old}", f"new: {saves.new}", "text diff left out (--no-text-diff)"]
+    assert out[-1] == "differing paragraphs 0"
+    assert not any(line.startswith("== Text diff") for line in out)
+
+
+def test_no_counts_leaves_the_structure_section_out(saves, capsys):
+    assert saves.compare("--no-counts") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[:4] == [f"old: {saves.old}", f"new: {saves.new}", "", "== Paragraph by paragraph"]
+
+
+def test_utc_shows_the_modified_times_in_utc(saves, capsys):
+    assert saves.compare("--utc") == 0
+    assert "modified (UTC): 2026-10-01 09:00 | 2026-10-02 17:30" in capsys.readouterr().out

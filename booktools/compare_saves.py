@@ -22,20 +22,25 @@ def _run(args):
     old, new = Docx(old_path), Docx(new_path)
     print(f"old: {old_path}")
     print(f"new: {new_path}")
-    print()
-    for line in structure_lines(old, new):
-        print(line)
+    if args.no_text_diff:
+        print("text diff left out (--no-text-diff)")
+    if not args.no_counts:
+        print()
+        for line in structure_lines(old, new, utc=args.utc):
+            print(line)
     print()
     print("== Paragraph by paragraph")
     old_parts, new_parts = old.texts(), new.texts()
     for part in (BODY, ENDNOTES, FOOTNOTES):
         if part in old_parts or part in new_parts:
-            for line in compare_part(part, old_parts.get(part, ""), new_parts.get(part, "")):
+            was, now = old_parts.get(part, ""), new_parts.get(part, "")
+            for line in compare_part(part, was, now, args.ignore_font):
                 print(line)
-    print()
-    print("== Text diff (body and notes, as pandoc reads them)")
-    for line in text_diff(_markdown(old_path), _markdown(new_path)):
-        print(line)
+    if not args.no_text_diff:
+        print()
+        print("== Text diff (body and notes, as pandoc reads them)")
+        for line in text_diff(_markdown(old_path), _markdown(new_path)) or ["no differences"]:
+            print(line)
     return 0
 
 
@@ -52,5 +57,20 @@ def _parser():
         " counts, each paragraph's words and formatting, and a text diff of body and notes.",
     )
     parser.add_argument("saves", nargs="+", metavar="FILE", help="OLD.docx NEW.docx")
+    parser.add_argument(
+        "--ignore-font",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="report a paragraph whose only difference is this font name as FONT-NAME-ONLY"
+        " (may be given more than once)",
+    )
+    parser.add_argument("--no-text-diff", action="store_true", help="leave out the text diff")
+    parser.add_argument(
+        "--no-counts", action="store_true", help="leave out the structure and counts"
+    )
+    parser.add_argument(
+        "--utc", action="store_true", help="show times in UTC instead of London time"
+    )
     parser.add_argument("--tmp", metavar="DIR", help="where to make the scratch folder")
     return parser
