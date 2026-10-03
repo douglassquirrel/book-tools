@@ -1,13 +1,12 @@
 """The registry of permanent note IDs, and the matching of a save's notes to it."""
 
-import difflib
 import json
-import re
+
+from booktools.text import likeness
 
 NAME = "book-tools notes"
 VERSION = 1
 FIELDS = ("id", "kind", "label", "text", "sentence", "first_seen", "last_seen", "retired_in")
-WORD = re.compile(r"\w+")
 # Found by experiment on invented saves (word-by-word likeness, 0 to 1): a light edit
 # scores 0.8 to 0.9, a page number changed in a short citation 0.5, a rewording 0.55 to
 # 0.6, another book by the same author 0.45, unrelated text 0 to 0.25.
@@ -151,14 +150,6 @@ def _is_clear(link, links):
         k for k in links if k is not link and (k.index == link.index or k.entry is link.entry)
     )
     return all(rival.score <= link.score - MARGIN for rival in rivals)
-
-
-def likeness(one, other):
-    """How alike two pieces of text are, from 0 to 1, comparing them word by word."""
-    a, b = WORD.findall(one.lower()), WORD.findall(other.lower())
-    if not a and not b:
-        return 1.0
-    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
 
 
 class RegistryError(Exception):

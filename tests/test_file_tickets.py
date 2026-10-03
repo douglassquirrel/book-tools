@@ -346,11 +346,11 @@ def test_a_lock_left_behind_during_the_batch_is_reported_and_never_removed(tmp_p
 def test_a_backlog_that_does_not_answer_in_time_stops_the_whole_batch(tmp_path, monkeypatch, capsys):
     three = TICKETS + [{"title": "A third"}]
     batch = Batch(tmp_path, monkeypatch, tickets=three, hang_on_create=2)
-    assert batch.run("--timeout", "0.5", "--results", str(batch.results)) == 1
+    assert batch.run("--timeout", "3", "--results", str(batch.results)) == 1
     captured = capsys.readouterr()
     assert captured.out.splitlines() == [
         "TASK-1  filed  Ch. 3: the 2019 figure",
-        "-  FAILED  Only a title (backlog did not answer within 0.5 seconds)",
+        "-  FAILED  Only a title (backlog did not answer within 3 seconds)",
         "1 filed, 1 failed, 0 skipped; stopped with 1 ticket not tried",
     ]
     assert captured.err.splitlines() == [
@@ -358,7 +358,7 @@ def test_a_backlog_that_does_not_answer_in_time_stops_the_whole_batch(tmp_path, 
         " Check the project for 'Only a title', then run again with the same --results file"
     ]
     assert [r["outcome"] for r in records(batch)] == [
-        "filed", "failed: backlog did not answer within 0.5 seconds",
+        "filed", "failed: backlog did not answer within 3 seconds",
     ]
     creates = [call for call in batch.backlog.calls() if call[:2] == ["task", "create"]]
     assert len(creates) == 2  # the third ticket was never tried

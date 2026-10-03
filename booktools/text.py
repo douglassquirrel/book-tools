@@ -1,6 +1,10 @@
 """Text as a reader sees it: whole characters, however Unicode spells them."""
 
+import difflib
+import re
 import unicodedata
+
+WORD = re.compile(r"\w+")
 
 
 def characters(text):
@@ -29,3 +33,11 @@ def _stands_alone(before, char):
     if unicodedata.combining(char):
         return False
     return nfc(before + char) == nfc(before) + nfc(char)
+
+
+def likeness(one, other):
+    """How alike two pieces of text are, from 0 to 1, comparing them word by word."""
+    a, b = WORD.findall(one.lower()), WORD.findall(other.lower())
+    if not a and not b:
+        return 1.0
+    return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
