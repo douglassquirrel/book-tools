@@ -533,3 +533,22 @@ def test_an_id_whose_note_is_unclear_in_this_save_is_not_guessed(tmp_path, capsy
 def test_help_names_the_registry_flag(capsys):
     assert main(["--help"]) == 0
     assert "--registry" in capsys.readouterr().out
+
+
+def test_the_dry_run_and_the_report_note_an_edit_that_would_leave_two_spaces(tmp_path, capsys):
+    from tests.samples import p
+
+    edits = [{"id": "C", "find": "A second sentence.", "replace": ""}]
+    book = Book(tmp_path, edits, parts=sample_parts([p("One sentence. A second sentence. A third.")]))
+    note = 'note: accepting C leaves two spaces in a row: "…sentence.  A third."'
+    assert book.run("--dry-run") == 0
+    assert capsys.readouterr().out.splitlines() == [
+        "C | body, paragraph 1 | One sentence. [A second sentence. →] A third. | | found",
+        note,
+        f"dry run: 1 edit found; {book.out} would be written; nothing written",
+    ]
+    assert book.run() == 0  # a note is not a failure: the edit is made as asked
+    assert capsys.readouterr().out.splitlines()[:2] == [
+        "C | body, paragraph 1 | One sentence. [A second sentence. →] A third. | | PASS",
+        note,
+    ]

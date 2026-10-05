@@ -17,7 +17,7 @@ from booktools.notes import read_notes
 from booktools.plan import PlanError, plan
 from booktools.propose import apply, edit_results, highest_id, verify
 from booktools.registry import RegistryError, load_registry, where_now
-from booktools.report import ARROW, edit_line
+from booktools.report import ARROW, edge_notes, edit_line
 
 
 def main(argv=None, now=None):
@@ -80,6 +80,7 @@ def _run(args, now):
     if args.dry_run:
         for found in located:
             print(edit_line(found, found.text, _place(manuscript, found), "found"))
+            _note(found)
         found = _count(len(located), "edit")
         print(f"dry run: {found} found; {args.out} would be written; nothing written")
         return 0
@@ -99,6 +100,7 @@ def _run(args, now):
         for found, passed in zip(located, edit_results(parts, written, located)):
             status = "PASS" if passed else "FAIL"
             print(edit_line(found, found.text, _place(manuscript, found), status))
+            _note(found)
         for name, passed, detail in results:
             print(f"{name}: {'PASS' if passed else 'FAIL'}: {detail}")
         if sound or args.keep_on_failure:
@@ -146,6 +148,12 @@ def _install(copy, out):
     finally:
         if os.path.exists(partial):
             os.remove(partial)
+
+
+def _note(found):
+    """Say what accepting the edit would leave at its edges that the author may not want."""
+    for line in edge_notes(found, found.text):
+        print(line)
 
 
 def _count(number, noun):
