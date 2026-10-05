@@ -10,7 +10,7 @@ writes over the file it was given: the manuscript is only ever read.
 |---|---|
 | `propose-edits` | Write a **copy** of a `.docx` with a list of edits in it as tracked changes, one per edit, and verify the copy, so the author can accept or reject each in Word |
 | `file-tickets` | File tickets into a Backlog project from a JSON list, with every character arriving unchanged, and check each one |
-| `note-map` | Give every endnote and footnote a permanent ID and keep a map to its current number, so Word can renumber freely and your records never need renumbering |
+| `note-map` | Give every endnote and footnote a permanent ID and keep a map to its current number, so Word can renumber freely and your records never need renumbering; and write a reading text of the manuscript with those IDs in it |
 | `compare-saves` | Say what changed between two saves of a manuscript: structure, words and formatting |
 | `check-spacing` | List the paragraphs that are not at the expected line spacing, following Word's style inheritance |
 | `sources-to-text` | Turn a folder of source PDFs into searchable text with page markers, using OCR where a page has no text |
@@ -20,7 +20,8 @@ writes over the file it was given: the manuscript is only ever read.
 - **macOS** (built and tested on macOS 26.6), with the **Python 3** that comes with Apple's
   command line tools (3.9 or later). No Python packages are needed.
 - From [Homebrew](https://brew.sh), each needed only by the command named:
-  - `pandoc`: `compare-saves` (its text diff) and `sources-to-text` (for `.epub` files). On a
+  - `pandoc`: `compare-saves` (its text diff), `note-map --extract` (the reading text) and
+    `sources-to-text` (for `.epub` files). On a
     Mac without Homebrew, use the installer package from [pandoc.org](https://pandoc.org).
   - `poppler` (which provides `pdftotext` and `pdftoppm`) and `tesseract`: `sources-to-text`
     (for `.pdf` files).
@@ -38,7 +39,7 @@ to install.
 
 ## Installation
 
-    brew install pandoc poppler tesseract backlog-md     # pandoc: compare-saves; poppler+tesseract: sources-to-text; backlog: file-tickets
+    brew install pandoc poppler tesseract backlog-md     # pandoc: compare-saves, note-map --extract; poppler+tesseract: sources-to-text; backlog: file-tickets
     git clone https://github.com/douglassquirrel/book-tools.git ~/projects/book-tools && cd ~/projects/book-tools
     ./propose-edits --help
 
@@ -123,8 +124,9 @@ standard error. Times are London time unless `--utc` is given.
 
 ### `propose-edits`: a copy of a `.docx` with edits as tracked changes
 
-    propose-edits EDITS.json --in MANUSCRIPT.docx --out COPY.docx [--author NAME] [--date ISO]
-                  [--dry-run] [--force] [--keep-on-failure] [--utc] [--tmp DIR] [--timeout SECONDS]
+    propose-edits EDITS.json --in MANUSCRIPT.docx --out COPY.docx [--registry FILE]
+                  [--author NAME] [--date ISO] [--dry-run] [--force] [--keep-on-failure]
+                  [--utc] [--tmp DIR] [--timeout SECONDS]
 
 The manuscript is read and never changed. The command writes `COPY.docx`, a copy in which
 each edit is a real tracked change (author, date and id) for the author to accept or reject
@@ -162,7 +164,7 @@ text they replace.
 |---|---|
 | `find` | The existing text, exactly, within one paragraph. It is found even where Word has split it across runs. Required. |
 | `replace` | What it should become; an empty string deletes it. To insert words, give the neighbouring text in `find` and the same text plus the new words in `replace`. Required. |
-| `where` | `body` (the default), `endnote:N` or `footnote:N`, or `all`. N counts the notes of that kind through the document from 1, whatever number the book prints. |
+| `where` | `body` (the default), `endnote:N` or `footnote:N`, `all`, or a note's permanent ID as `note-map` gave it (`N-0042`). N counts the notes of that kind through the document from 1, whatever number the book prints; it moves whenever a note is added or removed, and the ID does not (see "Naming a note by its permanent ID" below). |
 | `occurrence` | Which match to use, from 1, when the text occurs more than once in the place searched. |
 | `id` | Your name for the edit, shown in the report. |
 | `why` | The reason, shown in the report only. Nothing is written into the document as a comment. |
@@ -199,6 +201,38 @@ They cannot be skipped.
   (styles, pictures, settings), is the same byte for byte, and the edited parts are
   well-formed.
 
+**Naming a note by its permanent ID.** An edits file is often run against a later save than
+the one it was written from, and by then `endnote:42` may be another note. Give `where` the
+note's permanent ID instead, and the registry with `--registry`:
+
+    ./propose-edits by-id.json --in tests/fixtures/sample-edited.docx --out /tmp/y.docx --registry notes.json --dry-run
+
+```
+E3 | N-0001 → Chapter 1, note 2 (endnote:2) | …Recorded by Trinity House[→ , London] in the station log. | place | found
+dry run: 1 edit found; /tmp/y.docx would be written; nothing written
+```
+
+The command finds where that note stands in the save it was given, by the same matching
+`note-map` uses, and shows it as the book numbers it now. The registry is only read, never
+written. An ID the registry does not have, one that is retired, one whose note is not in
+this save, and one whose note cannot be told apart without guessing (run `note-map` on the
+save first and settle it there) are each an edit that cannot be placed: named with the
+reason, nothing written, exit 1. An edit that names an ID when no `--registry` is given is
+refused before anything is done (exit 2).
+
+**Notes under an edit's line.** When accepting an edit would leave something at its edges
+that you probably do not want, a line under it says so, in the dry run and in the report:
+
+```
+C | body, paragraph 1 | One sentence. [A second sentence. →] A third. | | found
+note: accepting C leaves two spaces in a row: "…sentence.  A third."
+```
+
+The kinds are: two spaces in a row; a punctuation mark doubled; a space before a punctuation
+mark; no space after one; two words run together. Only what the edit itself brings about is
+noted. A note is advice: the edit is still made exactly as written, and the exit code does
+not change. Put the space inside `find` (or `replace`) to cure it.
+
 **If a check fails**, the copy is not kept, the edit at fault is marked `FAIL`, and the exit
 code is 1. This means the command has a fault, not your edits file: please report it with
 the edits file. `--keep-on-failure` keeps the failed copy so it can be looked at.
@@ -213,7 +247,8 @@ hyperlink is fine.
 | Flag | Meaning |
 |---|---|
 | `--in FILE` | The manuscript. Only read. |
-| `--out FILE` | The copy to write. Refused if it exists, unless `--force`; refused always if it is the manuscript. |
+| `--out FILE` | The copy to write. Refused if it exists, unless `--force`; refused always if it is the manuscript or the registry. |
+| `--registry FILE` | `note-map`'s registry. Needed when an edit's `where` is a permanent ID; only read. |
 | `--author NAME` | The author on the changes (default `Claude`). |
 | `--date ISO` | The date and time on the changes (default: now). `2026-10-03T14:46` is London time; with an offset or `Z` it is that moment. |
 | `--utc` | Write the date in UTC. |
@@ -279,7 +314,8 @@ A ticket that fails does not stop the batch; the exit code is 1 if any failed.
 
 ### `note-map`: permanent IDs for notes
 
-    note-map MANUSCRIPT.docx --registry FILE [--map FILE] [--assign ID=NUMBER ...] [--dry-run]
+    note-map MANUSCRIPT.docx --registry FILE [--map FILE] [--extract FILE [--force]]
+             [--assign ID=NUMBER ...] [--dry-run] [--timeout SECONDS]
 
 Word renumbers notes whenever one is added or removed. Name a note in your records by a
 permanent ID instead, and let this command say what number it has today.
@@ -329,17 +365,57 @@ unclear: endnote:1 "The station log, as recorded by Trinity " in the sentence "A
   if it is a new note: --assign new=endnote:1
 ```
 
+**The reading text.** An assistant reads the manuscript as pandoc's markdown, in which
+notes are `[^1]`, `[^2]`… in the order they come, numbers that move with every note added.
+`--extract FILE` writes that same text with each note's permanent ID in place of the number,
+at the marker and at the note, so that what is read already names notes as the records do:
+
+    ./note-map tests/fixtures/sample-edited.docx --registry notes.json --extract reading.md
+
+```
+<!-- Made by note-map from `sample-edited.docx` (SHA-256 `a72c511b3668338d`), for reading only: each note is named by its permanent ID. Do not edit it. -->
+
+# The Lighthouse Ledger
+
+## Chapter 1
+
+[^N-0004]The lamp was lit at dawn, and the keeper isn’t one to waste oil.[^N-0001]
+
+She wrote *every* figure in a large ledger.[^N-0003]
+…
+The log for March is missing.[^N-0002]
+
+[^N-0004]: <!-- Chapter 1, note 1 --> A note added in the later save.
+
+[^N-0001]: <!-- Chapter 1, note 2 --> Recorded by Trinity House in the station log.
+
+[^N-0003]: <!-- Chapter 1, note 1 --> Imperial pints.
+
+[^N-0002]: <!-- Chapter 2, note 3 --> Ibid.
+```
+
+The comment at each note is where the book shows it: its heading and the number it prints,
+for when you talk to the publisher. The first line names the save by its file name and the
+first 16 characters of its SHA-256, as the map does. The text is for reading only; it is
+never the manuscript. It needs pandoc, and it is written in the same run as the registry and
+the map or not at all: if a note is unclear, if pandoc fails, or if pandoc counts a
+different number of notes than the manuscript holds, nothing whatever is written and the
+exit code is 1, so the text never carries a guessed ID.
+
 | Flag | Meaning |
 |---|---|
 | `--registry FILE` | The registry (JSON), created on the first run. Keep it with your records, in git. It is rewritten whole; no backup copy is left beside it. |
 | `--map FILE` | Write the map to this file as a Markdown table, made afresh at every run, instead of printing it. |
 | `--assign ID=NUMBER` | Settle an unclear note: that ID is the note now numbered `endnote:N` or `footnote:N`. `--assign new=NUMBER` says it is a new note. May be given several times. |
-| `--dry-run` | Report what would be carried, new and retired; write nothing. |
+| `--extract FILE` | Also write the reading text here (see above). Refused if the file exists, unless `--force`; refused always if it is the manuscript, the registry or the map. Needs pandoc. |
+| `--force` | Replace an existing `--extract` file. |
+| `--dry-run` | Report what would be carried, new and retired; write nothing. pandoc is not run. |
+| `--timeout SECONDS` | How long pandoc may take to read the manuscript for `--extract` (default 120). |
 
 ### `compare-saves`: two saves of a manuscript
 
-    compare-saves OLD.docx NEW.docx [--ignore-font NAME] [--no-text-diff] [--no-counts]
-                  [--utc] [--tmp DIR] [--timeout SECONDS]
+    compare-saves OLD.docx NEW.docx [--ignore-font NAME] [--no-text-diff] [--full-diff]
+                  [--no-counts] [--utc] [--tmp DIR] [--timeout SECONDS]
     compare-saves --git OLDREV [NEWREV] FILE.docx [the same options]
 
 The report (shown in full under Quick start) has three sections.
@@ -360,7 +436,18 @@ The report (shown in full under Quick start) has three sections.
    `k` is the paragraph's index, from 0. Where a paragraph's index differs between the
    saves the line says `j (old i)`.
 3. **Text diff** of body and notes as pandoc reads them. A note's number changing is not
-   reported as a change; a change to a note gives its old and new numbers.
+   reported as a change; a change to a note gives its old and new numbers. Each block is
+   headed `=== BODY replace` (or `insert`, `delete`) or `=== NOTES replace old [2] new [3]`.
+
+   | Line | Meaning |
+   |---|---|
+   | `  OLD: …` and `  NEW: …` | A paragraph or note as it was and as it is, whole. |
+   | `  CHANGED: …25 characters[old → new]25 characters…` | A changed paragraph or note of more than 200 characters, shown as its changed words only, one line for each run of changed words, in place of its `OLD` and `NEW` lines. An empty side (`[→ new ]`, `[old  →]`) is words added or cut. |
+
+   A paragraph of 200 characters or fewer, lines added or removed, a block in which the old
+   and new lines are not one for one, and a paragraph so rewritten that its changed words
+   would be longer than the paragraph, are printed whole. `--full-diff` prints everything
+   whole.
 
 The exit code is 0 whether or not there are differences: it is a report.
 
@@ -369,6 +456,7 @@ The exit code is 0 whether or not there are differences: it is a report.
 | `--git` | Compare committed versions of one file. The old side is `FILE.docx` at `OLDREV` (a commit, a tag, `HEAD~1`); the new side is the same file at `NEWREV`, or the file on disk if `NEWREV` is left out. Only `git show` and `git log` are run; nothing in the repository is touched. |
 | `--ignore-font NAME` | See `FONT-NAME-ONLY` above. May be given more than once. |
 | `--no-text-diff` | Leave out section 3. pandoc is then not needed. |
+| `--full-diff` | In section 3, print every changed paragraph and note whole, as `OLD` and `NEW` lines, however long. |
 | `--no-counts` | Leave out section 1. |
 | `--utc` | Show times in UTC. |
 | `--tmp DIR` | Where to make the scratch folder (used by `--git`). |
@@ -443,7 +531,9 @@ ledger.pdf: 1 pages, 0 read by OCR, 0 turned
 - **`.epub`**: converted with pandoc. **`.md`, `.txt`**: copied unchanged, so that a search
   of the output folder covers every source.
 - Anything else is skipped and logged. `SOURCES.md`, `PDF-COVERAGE.md` and `.DS_Store` are
-  ignored.
+  ignored. If your own index of the sources is kept in the folder under another name, give
+  it to `--skip`: a file named there is left alone and is not counted as skipped (without
+  that, an index `INDEX.md` would be copied to `INDEX.md.txt` like any other `.md` file).
 
 | Flag | Meaning |
 |---|---|
@@ -454,7 +544,7 @@ ledger.pdf: 1 pages, 0 read by OCR, 0 turned
 | `--dpi-scale PIXELS` | The longer side of the page image made for OCR (default 2800). |
 | `--no-rotate` | Try no turns. |
 | `--redo FILE...` | Convert these files again from scratch, writing `NAME.txt.new` beside the old text and saying which pages differ. The old text is never replaced: that is yours to decide. |
-| `--skip NAME...` | File names to leave alone. |
+| `--skip NAME...` | File names to leave alone: no text is made for them and they are not counted. |
 | `--clear-locks` | Remove locks left by a run that was killed (see below). |
 | `--tmp DIR` | Where to make the scratch folder for page images. |
 | `--timeout SECONDS` | How long `pdftotext`, `pdftoppm` or pandoc may take over one call (default 120). |
@@ -463,13 +553,19 @@ ledger.pdf: 1 pages, 0 read by OCR, 0 turned
 A file that cannot be converted (a program fails or runs over its time) is reported as
 `FAILED` with the reason, and the run goes on to the next; the exit code is then 1.
 
+Where the system will not let the command remove a lock, a page cache or a part-written
+file it made (some shells forbid deleting in a connected folder), it says so in one line on
+standard error, `could not remove the lock .lock-NAME: Operation not permitted; remove it by
+hand`, counts the file as converted if its text is complete, goes on, adds `; N could not be
+removed` to the last line, and exits 1.
+
 ## The files the commands write
 
 | Command | Writes | Where |
 |---|---|---|
-| `propose-edits` | The copy, and nothing else | The path given to `--out`. While it is being put in place, a file `COPY.docx.partial-…` exists briefly beside it. |
+| `propose-edits` | The copy, and nothing else (the registry given with `--registry` is only read) | The path given to `--out`. While it is being put in place, a file `COPY.docx.partial-…` exists briefly beside it. |
 | `file-tickets` | The results file (JSON: `index`, `title`, `id`, `outcome` per ticket), only with `--results` | The path given. Tickets themselves are written by Backlog, in the project. |
-| `note-map` | The registry (JSON: for each note its `id`, `kind`, `label`, `text`, `sentence`, the SHA-256 of the saves it was first and last seen in, and the save it was retired in); the map, only with `--map` | The paths given. |
+| `note-map` | The registry (JSON: for each note its `id`, `kind`, `label`, `text`, `sentence`, the SHA-256 of the saves it was first and last seen in, and the save it was retired in); the map, only with `--map`; the reading text (pandoc's markdown of the manuscript with permanent IDs for note numbers), only with `--extract` | The paths given. Each is written through a file `NAME.partial-…` beside it, which exists briefly. |
 | `compare-saves` | Nothing | |
 | `check-spacing` | Nothing | |
 | `sources-to-text` | `NAME.txt` for each source (`NAME.txt.new` with `--redo`); `.convert-log.txt`, one line per file (`NAME pages=M ocr=K turned=T`, `NAME md`, `SKIP NAME`, `FAILED NAME: reason`); while a PDF is part done, `.NAME.pages.json`, its page cache, removed when the file completes; while a file is being converted, a lock folder `.lock-NAME`, removed when it is done | The output folder. |
@@ -485,14 +581,19 @@ interrupted. No command writes anything beside its input, and none leaves a `__p
 | 0 | Complete success, including nothing to do. `compare-saves` exits 0 whether or not the saves differ. |
 | 1 | The run happened and found a problem: an edit could not be placed, a check failed, a ticket failed, a note is unclear, a paragraph is not at the expected spacing, a source could not be converted, a save could not be read. |
 | 2 | The command refused to start: a bad flag, a missing program, a missing or faulty input, an output that exists. Nothing was done. |
-| 130 | Interrupted (Ctrl-C). Nothing half-written is left behind. |
+| 130 | Interrupted (Ctrl-C). Nothing half-written is left behind, unless the system forbids removing it, which the command then says. |
 
 What to do about the refusals and failures you are most likely to meet:
 
 | Message | What to do |
 |---|---|
 | `… was not found` (pandoc, backlog, pdftotext, …) | Install it with the command in the message. |
-| `… already exists; give another name or add --force` | `propose-edits` will not write over a file. Choose another name, or add `--force`. |
+| `… already exists; give another name or add --force` | `propose-edits` and `note-map --extract` will not write over a file. Choose another name, or add `--force`. |
+| `… names a note by its permanent ID (N-0042); give the registry with --registry FILE` | Add `--registry` with the registry `note-map` keeps. |
+| `N-0042 is retired …`, `… is not in the registry`, `the note N-0042 is not in this save` | The note the edit was written for is gone, or the ID is mistyped. Check the map. |
+| `N-0042 cannot be placed in this save without guessing …` | Run `note-map` on this save and settle the unclear note with `--assign`; then run the edits again. |
+| `no reading text: …; nothing written` | pandoc failed, or counted the notes differently from the manuscript (a marker with no note, a note in a text box). Nothing was written, the registry included. Run without `--extract` to update the registry alone. |
+| `could not remove … ; remove it by hand` | The system refused to let the command delete something it made. Delete the named file or folder yourself (or grant the permission and run again). |
 | `"find" text not found …` | The text is not in the place searched. Check `where`, and that the text is copied exactly, curly quotes included. |
 | `"find" text occurs N times …; add "occurrence"` | Add `"occurrence": 2` (or whichever). |
 | `the "find" text crosses a note marker …` | Shorten the edit so that it lies on one side of the marker, or make two edits. |
@@ -540,8 +641,10 @@ The author's routine after saving the manuscript is three commands:
 
 The writing computer needs git (it comes with Apple's command line tools) and access to the
 private repository; nothing from this kit, unless the text diff is wanted there, which needs
-pandoc. On the assistant's computer `git pull` brings the save, and
-`compare-saves --git HEAD~1 MANUSCRIPT.docx` says what changed. A `.docx` cannot be merged,
+pandoc. On the assistant's computer `git pull` brings the save,
+`compare-saves --git HEAD~1 MANUSCRIPT.docx` says what changed, and
+`note-map MANUSCRIPT.docx --registry notes.json --map note-map.md --extract reading.md --force`
+brings the registry, the map and the reading text up to date in one run. A `.docx` cannot be merged,
 so each has one writer: the author. The assistant never commits a change to the manuscript.
 
 **How proposed edits reach the author.** The copy `propose-edits` writes is committed under a
@@ -555,6 +658,10 @@ that the copy does not lack what the author wrote meanwhile, use one of two rout
   copy; the author runs `propose-edits` on the writing computer against the current save (it
   needs only Apple's Python). An edit whose text has changed since is refused and listed.
 
+Either way the author may have saved again before the edits are run, and every note number
+may have moved; so an edits file should name a note by its permanent ID (`"where":
+"N-0042"`, with `--registry`), not by `endnote:N`.
+
 **Large files.** A hosting service may refuse a file over its limit (GitHub: 100 MB). Put
 PDFs, images and other large binaries through [Git LFS](https://git-lfs.com), tracked before
 their first commit (`git lfs install` once on each computer, then
@@ -563,7 +670,18 @@ takes over the diff setting and would defeat the text diff. A simpler alternativ
 sources that never change is to leave them out of git and commit a list of their checksums.
 
 **Size.** Word and PowerPoint files are already compressed, so every committed version costs
-about its full size.
+about its full size: the repository grows by the size of a save times the number of saves
+committed. A manuscript of 5 MB with its figures in it, committed 200 times, is about 1 GB
+of history, which is the most GitHub recommends for a repository; past that a clone is slow,
+and **history cannot be trimmed afterwards without rewriting it**. So keep the figures out
+of the manuscript until submission: put a placeholder line where each goes (`[Figure 3.2]`)
+and keep the pictures as files of their own (through Git LFS, above). A save of text alone
+is usually under 1 MB, and 200 of them a fifth of the limit. To see what the repository
+holds now:
+
+    git count-objects -vH
+
+(`size-pack` is the history; files in Git LFS are not counted in it).
 
 ## Testing
 
@@ -576,10 +694,8 @@ small stand-in program on a `PATH` of its own, which records what it was given a
 told to fail. Every document in the tests is invented and built by the tests themselves; no
 real manuscript, source or ticket is in this repository.
 
-Coverage of `booktools/` is 99% (statements and branches; 344 tests). The seven statements
-no test in the suite's own process runs are: three lines that remove a part-written file
-when a write is cut short between writing and renaming (in `file-tickets`, `note-map` and
-the `.epub` path of `sources-to-text`); and the lines of `sources-to-text` that only its
+Coverage of `booktools/` is 99% (statements and branches; 394 tests). The four statements
+no test in the suite's own process runs are the lines of `sources-to-text` that only its
 worker processes run (writing their tally, and the module's entry point), which the
 `--workers` tests exercise in child processes where coverage is not measured.
 
@@ -598,7 +714,8 @@ read-only on your book folder; write only into a scratch folder.
 4. `propose-edits --dry-run` with a few edits against a *copy* of the manuscript: each is
    found where you expect. Then apply them, and open the copy in Word.
 5. `note-map` over three consecutive saves with the registry in a scratch folder: every ID
-   carried, none unclear.
+   carried, none unclear. With `--extract`, read the text: each ID stands at the marker and
+   the note you expect.
 6. With Pillow installed, `sources-to-text` on a PDF with a page scanned sideways: the
    page's header says it was turned, and the text under it reads properly.
 
@@ -620,6 +737,13 @@ read-only on your book folder; write only into a scratch folder.
 - **`note-map`** recognises a note by its text and its sentence. Its rule for finding
   sentences is simple and can be fooled by unusual punctuation; what matters is that it
   gives the same answer for the same text at every save.
+- **`note-map --extract`** relies on pandoc numbering the notes in the order their markers
+  come, endnotes and footnotes together, and refuses when the counts differ; a document
+  with a note marker inside a text box, or a marker whose note is missing, gets no reading
+  text. A literal `[^7]` typed in the manuscript is safe: pandoc writes it with backslashes.
+- **`file-tickets`** knows a ticket's title, description, priority, labels, milestone, status
+  and comments, and nothing else: no assignee, acceptance criteria or dependencies. Any
+  other key in a tickets file is refused as an unknown key; set those in Backlog afterwards.
 - **`sources-to-text`** reads only the files directly in the folder, not sub-folders.
   Turning pages needs Pillow.
 
@@ -654,6 +778,33 @@ know. The first version of each command was built on 3 October 2026.
   read. On a map whose labels run in every direction the choice of turn is a toss-up.
 - 3 October 2026: `file-tickets` checks the priority, labels, milestone and status of each
   ticket it reads back, as well as its title, description and comments.
+- 5 October 2026: `note-map` has a new flag, `--extract FILE` (with `--force` and
+  `--timeout`): a reading text of the manuscript, pandoc's markdown with each note's
+  permanent ID in place of its number (`[^N-0042]`), and the number the book prints in a
+  comment at the note. It needs pandoc. Records and edits files can now be written from a
+  text that already names notes by ID.
+- 5 October 2026: in an edits file, `where` may be a note's permanent ID (`"where":
+  "N-0042"`), with the new flag `--registry FILE` on `propose-edits`. The same edits file
+  then works against a later save in which the notes have been renumbered. The report shows
+  such a note as `N-0042 → Chapter 3, note 7 (endnote:42)`. The message for a `where` that
+  cannot be read now mentions the ID form.
+- 5 October 2026: the dry run and the report of `propose-edits` have a new kind of line,
+  `note: accepting ID leaves two spaces in a row: "…"`, under an edit that would leave a
+  doubled or missing space or punctuation mark at its edges. Anything that reads the report
+  line by line should expect it. It does not change the exit code.
+- 5 October 2026: **the text diff of `compare-saves` has a new line form, `CHANGED:`**. A
+  changed paragraph or note of more than 200 characters is now shown as its changed words
+  only (`  CHANGED: …25 characters[old → new]25 characters…`) where it used to be printed
+  whole twice as `OLD:` and `NEW:`. The new flag `--full-diff` gives the earlier output
+  exactly. Shorter paragraphs are reported as before.
+- 5 October 2026: where the system refuses to let a command remove a lock, a page cache or
+  a part-written file it made, the command now says `could not remove …; remove it by hand`
+  on standard error instead of stopping with a Python traceback. `sources-to-text` then goes
+  on, ends its last line with `; N could not be removed`, and exits 1.
+- 5 October 2026: nothing changed in `sources-to-text --skip`, but note what it is for: name
+  your own index file of the sources there and it is neither copied nor counted.
+- 5 October 2026: advice added on the size of a book folder kept in git (keep figures out
+  of the manuscript until submission; `git count-objects -vH`).
 
 ## Contributing
 
