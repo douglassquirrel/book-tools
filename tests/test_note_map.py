@@ -400,7 +400,8 @@ def test_when_pandoc_fails_nothing_at_all_is_written_and_the_exit_code_is_1(
     flags = ["--extract", str(reader.reading), "--map", str(reader.map), "--timeout", "2"]
     assert reader.run(*flags) == 1
     assert capsys.readouterr().err.splitlines() == [
-        "note-map: no reading text: " + said.format(book=reader.manuscript) + "; nothing written"
+        "note-map: no reading text: " + said.format(book=reader.manuscript) + "; nothing written."
+        " To bring the registry up to date without it, run again without --extract"
     ]
     assert list(reader.records.iterdir()) == []
 
@@ -416,7 +417,8 @@ def test_notes_that_pandoc_counts_differently_are_never_given_ids_by_guesswork(r
     assert reader.run("--extract", str(reader.reading)) == 1
     assert capsys.readouterr().err.splitlines() == [
         "note-map: no reading text: pandoc read 4 notes where the manuscript has 3;"
-        " nothing written"
+        " nothing written. To bring the registry up to date without it, run again without"
+        " --extract"
     ]
     assert list(reader.records.iterdir()) == []
 

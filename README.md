@@ -592,7 +592,7 @@ What to do about the refusals and failures you are most likely to meet:
 | `… names a note by its permanent ID (N-0042); give the registry with --registry FILE` | Add `--registry` with the registry `note-map` keeps. |
 | `N-0042 is retired …`, `… is not in the registry`, `the note N-0042 is not in this save` | The note the edit was written for is gone, or the ID is mistyped. Check the map. |
 | `N-0042 cannot be placed in this save without guessing …` | Run `note-map` on this save and settle the unclear note with `--assign`; then run the edits again. |
-| `no reading text: …; nothing written` | pandoc failed, or counted the notes differently from the manuscript (a marker with no note, a note in a text box). Nothing was written, the registry included. Run without `--extract` to update the registry alone. |
+| `no reading text: …; nothing written. To bring the registry up to date without it, run again without --extract` | pandoc failed, or counted the notes differently from the manuscript (a marker with no note, a note in a text box). Nothing was written, the registry included. Run without `--extract` to update the registry alone. |
 | `could not remove … ; remove it by hand` | The system refused to let the command delete something it made. Delete the named file or folder yourself (or grant the permission and run again). |
 | `"find" text not found …` | The text is not in the place searched. Check `where`, and that the text is copied exactly, curly quotes included. |
 | `"find" text occurs N times …; add "occurrence"` | Add `"occurrence": 2` (or whichever). |

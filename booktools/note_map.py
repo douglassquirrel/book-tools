@@ -120,7 +120,11 @@ def _run(args):
         try:
             reading = reading_text(markdown(args.manuscript, args.timeout), order, name, save)
         except (NoMarkdown, ExtractError) as error:
-            print(f"note-map: no reading text: {error}; nothing written", file=sys.stderr)
+            print(
+                f"note-map: no reading text: {error}; nothing written. To bring the registry"
+                " up to date without it, run again without --extract",
+                file=sys.stderr,
+            )
             return 1
     if args.map:
         _write(args.map, map_markdown(rows, retired, name, save))
