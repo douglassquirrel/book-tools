@@ -19,12 +19,16 @@ def map_lines(rows, retired):
     """The map as lines for the terminal."""
     lines = []
     for id, label, place, shown, heading in rows:
-        number = f"note {shown}" if shown else "numbered by page"
-        where = f"{heading}, {number}" if heading else number
-        lines.append(f"{id} | {place} | {where} | {label}")
+        lines.append(f"{id} | {place} | {where(shown, heading)} | {label}")
     if retired:
         lines.append("retired: " + ", ".join(retired))
     return lines
+
+
+def where(shown, heading):
+    """Where the book shows a note: under its heading, with the number it prints."""
+    number = f"note {shown}" if shown else "numbered by page"
+    return f"{heading}, {number}" if heading else number
 
 
 def map_markdown(rows, retired, name, save):

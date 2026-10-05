@@ -6,6 +6,7 @@ import pytest
 from booktools.note_map import main
 from tests.docxkit import pack_docx
 from tests.samples import edited_parts, sample_parts
+from tests.stubs import only, pandoc_stub
 
 pytestmark = pytest.mark.tier2
 
@@ -271,3 +272,170 @@ def test_a_bare_number_is_enough_when_the_document_has_one_kind_of_note(tmp_path
     capsys.readouterr()
     assert book.run("--assign", "N-0001=1") == 0
     assert capsys.readouterr().out.splitlines()[0] == "2 notes: 2 carried, 0 new, 0 retired"
+
+
+@pytest.fixture
+def reader(book, tmp_path, monkeypatch):
+    """A book with a stand-in pandoc on PATH and a place for the reading text."""
+    book.pandoc = pandoc_stub(tmp_path / "pandoc-bin")
+    monkeypatch.setenv("PATH", only(book.pandoc))
+    book.reading = book.records / "reading.md"
+    return book
+
+
+def header(book):
+    sha = hashlib.sha256(book.manuscript.read_bytes()).hexdigest()[:16]
+    return (
+        f"<!-- Made by note-map from `Book.docx` (SHA-256 `{sha}`), for reading only: each"
+        " note is named by its permanent ID. Do not edit it. -->"
+    )
+
+
+def test_extract_writes_the_reading_text_with_each_note_s_id_at_its_marker_and_note(reader, capsys):
+    assert reader.run("--extract", str(reader.reading)) == 0
+    assert capsys.readouterr().out.splitlines()[-1] == f"wrote the reading text {reader.reading}"
+    # The footnote is the second note as pandoc counts and the third the registry numbered.
+    assert reader.reading.read_text(encoding="utf-8").split("\n\n") == [
+        header(reader),
+        "The Lighthouse Ledger",
+        "Chapter 1",
+        "The lamp was lit at dusk, and the keeper isn’t one to waste oil.[^N-0001]",
+        "She wrote every figure in a large ledger.[^N-0003]",
+        "Oil used: 12 pints",
+        "A caption set in another font.",
+        "A line at exact spacing.",
+        "Chapter 2",
+        "The log for March is missing.[^N-0002]",
+        "[^N-0001]: <!-- Chapter 1, note 1 --> Recorded by Trinity House in the station log.",
+        "[^N-0003]: <!-- Chapter 1, note 1 --> Imperial pints.",
+        "[^N-0002]: <!-- Chapter 2, note 2 --> Ibid.\n",
+    ]
+    assert reader.pandoc.calls() == [
+        ["-f", "docx", "-t", "markdown-smart", "--wrap=none", str(reader.manuscript)]
+    ]
+    assert [path.name for path in reader.folder.iterdir()] == ["Book.docx"]
+    assert sorted(path.name for path in reader.records.iterdir()) == ["notes.json", "reading.md"]
+
+
+def test_in_a_later_save_the_same_ids_are_in_the_same_sentences_and_the_new_note_has_a_new_one(
+    reader,
+):
+    reader.run()
+    reader.save(edited_parts())  # a note added in front of the others
+    assert reader.run("--extract", str(reader.reading)) == 0
+    text = reader.reading.read_text(encoding="utf-8")
+    assert text.startswith(header(reader) + "\n\n")
+    for line in (
+        "[^N-0004]The lamp was lit at dawn, and the keeper isn’t one to waste oil.[^N-0001]",
+        "She wrote every figure in a large ledger.[^N-0003]",
+        "The log for March is missing.[^N-0002]",
+        "[^N-0004]: <!-- Chapter 1, note 1 --> A note added in the later save.",
+        "[^N-0001]: <!-- Chapter 1, note 2 --> Recorded by Trinity House in the station log.",
+        "[^N-0003]: <!-- Chapter 1, note 1 --> Imperial pints.",
+        "[^N-0002]: <!-- Chapter 2, note 3 --> Ibid.",
+    ):
+        assert line in text.split("\n")
+
+
+def test_no_reading_text_is_written_while_a_note_is_unclear(reader, capsys):
+    reader.run()
+    reader.save(moved_and_rewritten())
+    assert reader.run("--extract", str(reader.reading)) == 1
+    assert not reader.reading.exists()
+    assert reader.pandoc.calls() == []
+
+
+def test_extract_refuses_to_start_without_pandoc_and_says_how_to_get_it(
+    reader, capsys, monkeypatch, tmp_path
+):
+    empty = tmp_path / "nothing-here"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert refused(reader, capsys, "--extract", str(reader.reading)) == [
+        "note-map: pandoc was not found; --extract needs it. Install it with"
+        " `brew install pandoc`, or on a Mac without Homebrew with the installer package"
+        " from pandoc.org"
+    ]
+    assert not reader.registry.exists()
+    assert reader.run() == 0  # without --extract, pandoc is not needed
+
+
+def test_extract_never_writes_over_a_file_unless_forced_and_never_over_its_inputs(reader, capsys):
+    reader.reading.write_text("kept")
+    assert refused(reader, capsys, "--extract", str(reader.reading)) == [
+        f"note-map: {reader.reading} already exists; give another name or add --force"
+    ]
+    assert refused(reader, capsys, "--extract", str(reader.reading), "--dry-run") == [
+        f"note-map: {reader.reading} already exists; give another name or add --force"
+    ]
+    assert reader.reading.read_text() == "kept" and not reader.registry.exists()
+    assert reader.run("--extract", str(reader.reading), "--force") == 0
+    assert reader.reading.read_text(encoding="utf-8").startswith("<!-- Made by note-map")
+    capsys.readouterr()
+    assert refused(reader, capsys, "--extract", str(reader.manuscript), "--force") == [
+        f"note-map: {reader.manuscript} is the manuscript itself; give the reading text"
+        " another name"
+    ]
+    for flags in (
+        ["--extract", str(reader.registry)],
+        ["--extract", str(reader.map), "--map", str(reader.map)],
+    ):
+        assert refused(reader, capsys, *flags, "--force") == [
+            f"note-map: {flags[1]} is given twice; give the reading text another name"
+        ]
+    assert refused(reader, capsys, "--extract", str(reader.records / "no" / "r.md")) == [
+        f"note-map: the folder {reader.records / 'no'} does not exist"
+    ]
+
+
+def test_a_dry_run_with_extract_says_what_would_be_written_and_runs_nothing(reader, capsys):
+    assert reader.run("--extract", str(reader.reading), "--dry-run") == 0
+    assert capsys.readouterr().out.splitlines()[-1] == (
+        f"dry run: the reading text {reader.reading} would be written"
+    )
+    assert not reader.reading.exists() and not reader.registry.exists()
+    assert reader.pandoc.calls() == []
+
+
+@pytest.mark.parametrize(
+    "fault, said",
+    [
+        ("fail", "pandoc failed on {book}: pandoc: could not read the file"),
+        ("silent", "pandoc printed nothing for {book}"),
+        ("garbage", "pandoc did not print text for {book}"),
+        ("hang", "pandoc did not finish with {book} within 2 seconds"),
+    ],
+)
+def test_when_pandoc_fails_nothing_at_all_is_written_and_the_exit_code_is_1(
+    reader, capsys, fault, said
+):
+    reader.pandoc.control(**{fault: True})
+    flags = ["--extract", str(reader.reading), "--map", str(reader.map), "--timeout", "2"]
+    assert reader.run(*flags) == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "note-map: no reading text: " + said.format(book=reader.manuscript) + "; nothing written"
+    ]
+    assert list(reader.records.iterdir()) == []
+
+
+def test_notes_that_pandoc_counts_differently_are_never_given_ids_by_guesswork(reader, capsys):
+    parts = sample_parts()
+    # A marker whose note is missing: the manuscript has three notes, pandoc counts four.
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        "<w:r><w:t>The log for March is missing.</w:t></w:r>",
+        '<w:r><w:t>The log for March is missing.</w:t></w:r><w:r><w:endnoteReference w:id="9"/></w:r>',
+    )
+    reader.save(parts)
+    assert reader.run("--extract", str(reader.reading)) == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "note-map: no reading text: pandoc read 4 notes where the manuscript has 3;"
+        " nothing written"
+    ]
+    assert list(reader.records.iterdir()) == []
+
+
+def test_help_names_the_flags_of_the_reading_text(capsys):
+    assert main(["--help"]) == 0
+    out = capsys.readouterr().out
+    for flag in ("--extract", "--force", "--timeout"):
+        assert flag in out

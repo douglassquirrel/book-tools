@@ -5,7 +5,6 @@ import re
 
 NOTE = re.compile(r"^\[\^(\d+)\]: (.*)")
 REFERENCE = re.compile(r"\[\^\d+\]")
-PANDOC = ["pandoc", "-f", "docx", "-t", "markdown-smart", "--wrap=none"]
 
 
 def text_diff(old, new):

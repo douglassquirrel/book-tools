@@ -4,14 +4,17 @@ import argparse
 import hashlib
 import os
 import re
+import shutil
 import sys
 
 from booktools import cli
 from booktools.cli import Refusal
 from booktools.docx import Docx, DocxError
+from booktools.extract import ExtractError, reading_text
 from booktools.manuscript import Manuscript
-from booktools.notemap import LABEL, map_lines, map_markdown, map_rows
+from booktools.notemap import LABEL, map_lines, map_markdown, map_rows, where
 from booktools.notes import read_notes
+from booktools.pandoc import INSTALL, NoMarkdown, markdown
 from booktools.registry import (
     AssignError,
     Registry,
@@ -39,7 +42,8 @@ def _run(args):
         raise Refusal(str(error)) from None
     with open(args.manuscript, "rb") as file:
         save = hashlib.sha256(file.read()).hexdigest()
-    for path, what in ((args.registry, "registry"), (args.map, "map")):
+    files = ((args.registry, "registry"), (args.map, "map"), (args.extract, "reading text"))
+    for path, what in files:
         if path is None:
             continue
         if os.path.realpath(path) == os.path.realpath(args.manuscript):
@@ -47,6 +51,14 @@ def _run(args):
         folder = os.path.dirname(path) or "."
         if not os.path.isdir(folder):
             raise Refusal(f"the folder {folder} does not exist")
+    if args.extract:
+        others = [os.path.realpath(path) for path in (args.registry, args.map) if path]
+        if os.path.realpath(args.extract) in others:
+            raise Refusal(f"{args.extract} is given twice; give the reading text another name")
+        if os.path.exists(args.extract) and not args.force:
+            raise Refusal(f"{args.extract} already exists; give another name or add --force")
+        if shutil.which("pandoc") is None:
+            raise Refusal(f"pandoc was not found; --extract needs it. {INSTALL}")
     registry, before = Registry(), None
     if os.path.exists(args.registry):
         with open(args.registry, encoding="utf-8") as file:
@@ -55,7 +67,8 @@ def _run(args):
             registry = load_registry(before)
         except RegistryError as error:
             raise Refusal(f"{args.registry} cannot be used: {error}") from None
-    notes = read_notes(Manuscript(docx.texts()))
+    manuscript = Manuscript(docx.texts())
+    notes = read_notes(manuscript)
     assign, flags = _assignments(args.assign, notes)
     try:
         matching = match(notes, registry.live(), assign)
@@ -96,12 +109,27 @@ def _run(args):
         for line in map_lines(rows, retired):
             print(line)
     if args.dry_run:
+        if args.extract:
+            print(f"dry run: the reading text {args.extract} would be written")
         return 0
+    name = os.path.basename(args.manuscript)
+    reading = None
+    if args.extract:
+        shown = {place: where(number, heading) for _, _, place, number, heading in rows}
+        order = [(ids[place], shown[place]) for place in manuscript.note_order()]
+        try:
+            reading = reading_text(markdown(args.manuscript, args.timeout), order, name, save)
+        except (NoMarkdown, ExtractError) as error:
+            print(f"note-map: no reading text: {error}; nothing written", file=sys.stderr)
+            return 1
     if args.map:
-        _write(args.map, map_markdown(rows, retired, os.path.basename(args.manuscript), save))
+        _write(args.map, map_markdown(rows, retired, name, save))
     after = dump_registry(updated)
     if after != before:
         _write(args.registry, after)
+    if reading is not None:
+        _write(args.extract, reading)
+        print(f"wrote the reading text {args.extract}")
     return 0
 
 
@@ -159,6 +187,15 @@ def _parser():
         "--map", metavar="FILE", help="write the map here as a Markdown table, not to the screen"
     )
     parser.add_argument(
+        "--extract",
+        metavar="FILE",
+        help="also write the reading text here: the manuscript as pandoc reads it (markdown),"
+        " with each note's permanent ID in place of its number; needs pandoc",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="write the reading text even if the file exists"
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="report what would change and write nothing"
     )
     parser.add_argument(
@@ -168,5 +205,12 @@ def _parser():
         metavar="ID=NUMBER",
         help="settle an unclear note: this ID is the note now numbered NUMBER (endnote:N or"
         " footnote:N, counted through the document); new=NUMBER says it is a new note",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=120,
+        metavar="SECONDS",
+        help="how long pandoc may take to read the manuscript for --extract (default 120)",
     )
     return parser

@@ -16,7 +16,8 @@ from booktools.compare import compare_part
 from booktools.counts import structure_lines
 from booktools.docx import Docx, DocxError
 from booktools.manuscript import BODY, ENDNOTES, FOOTNOTES
-from booktools.textdiff import PANDOC, text_diff
+from booktools.pandoc import INSTALL, NoMarkdown, markdown
+from booktools.textdiff import text_diff
 
 
 def main(argv=None):
@@ -32,9 +33,8 @@ def _run(args):
         raise Refusal("give two saves, OLD.docx NEW.docx (or --git OLDREV [NEWREV] FILE.docx)")
     if not args.no_text_diff and shutil.which("pandoc") is None:
         raise Refusal(
-            "pandoc was not found; the text diff needs it. Install it with"
-            " `brew install pandoc`, or on a Mac without Homebrew with the installer package"
-            " from pandoc.org; or leave the text diff out with --no-text-diff"
+            f"pandoc was not found; the text diff needs it. {INSTALL};"
+            " or leave the text diff out with --no-text-diff"
         )
     if args.git and shutil.which("git") is None:
         raise Refusal("git was not found; --git needs it")
@@ -84,7 +84,7 @@ def _report(args, scratch):
         print("== Text diff (body and notes, as pandoc reads them)")
         try:
             words = text_diff(
-                _markdown(old_path, args.timeout), _markdown(new_path, args.timeout)
+                markdown(old_path, args.timeout), markdown(new_path, args.timeout)
             )
         except NoMarkdown as error:
             raise Failed(f"no text diff: {error}") from None
@@ -126,31 +126,6 @@ def _git(command, timeout):
         )
     except subprocess.TimeoutExpired:
         raise Failed(f"git did not answer within {timeout:g} seconds") from None
-
-
-class NoMarkdown(Exception):
-    """pandoc could not give the text of a save."""
-
-
-def _markdown(path, timeout):
-    """The text of a .docx as pandoc reads it."""
-    try:
-        done = subprocess.run(
-            PANDOC + [path], stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout
-        )
-    except subprocess.TimeoutExpired:
-        raise NoMarkdown(
-            f"pandoc did not finish with {path} within {timeout:g} seconds"
-        ) from None
-    if done.returncode != 0:
-        said = done.stderr.decode("utf-8", "replace").strip().splitlines()
-        raise NoMarkdown(f"pandoc failed on {path}: {said[0] if said else done.returncode}")
-    if not done.stdout:
-        raise NoMarkdown(f"pandoc printed nothing for {path}")
-    try:
-        return done.stdout.decode("utf-8")
-    except UnicodeDecodeError:
-        raise NoMarkdown(f"pandoc did not print text for {path}") from None
 
 
 def _parser():
