@@ -336,3 +336,28 @@ def test_a_commit_date_that_cannot_be_read_is_shown_as_git_gave_it(saves, reposi
     assert capsys.readouterr().out.splitlines()[0] == (
         f"old: {repository.file} at HEAD~1 (commit 1a2b3c4, some day or other)"
     )
+
+
+def test_a_long_paragraph_s_change_is_shown_short_and_full_diff_gives_the_whole_lines(
+    saves, capsys
+):
+    from tests.samples import BODY_PARAGRAPHS, p
+
+    long = "The tide tables for the year were copied out by hand, one page for each month. " * 3
+    pack_docx(saves.old, sample_parts(BODY_PARAGRAPHS + [p(long + "They were kept dry.")]))
+    pack_docx(saves.new, sample_parts(BODY_PARAGRAPHS + [p(long + "They were kept safe.")]))
+    assert saves.compare("--no-counts") == 0
+    assert capsys.readouterr().out.splitlines()[-3:] == [
+        "== Text diff (body and notes, as pandoc reads them)",
+        "=== BODY replace",
+        "  CHANGED: …ch month. They were kept [dry. → safe.]",
+    ]
+    assert saves.compare("--no-counts", "--full-diff") == 0
+    assert capsys.readouterr().out.splitlines()[-4:] == [
+        "== Text diff (body and notes, as pandoc reads them)",
+        "=== BODY replace",
+        f"  OLD: {long}They were kept dry.",
+        f"  NEW: {long}They were kept safe.",
+    ]
+    assert saves.run("--help") == 0
+    assert "--full-diff" in capsys.readouterr().out

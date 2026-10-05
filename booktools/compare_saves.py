@@ -84,7 +84,9 @@ def _report(args, scratch):
         print("== Text diff (body and notes, as pandoc reads them)")
         try:
             words = text_diff(
-                markdown(old_path, args.timeout), markdown(new_path, args.timeout)
+                markdown(old_path, args.timeout),
+                markdown(new_path, args.timeout),
+                full=args.full_diff,
             )
         except NoMarkdown as error:
             raise Failed(f"no text diff: {error}") from None
@@ -155,6 +157,12 @@ def _parser():
         " (may be given more than once)",
     )
     parser.add_argument("--no-text-diff", action="store_true", help="leave out the text diff")
+    parser.add_argument(
+        "--full-diff",
+        action="store_true",
+        help="in the text diff, print a long changed paragraph or note whole, old and new,"
+        " not just its changed words",
+    )
     parser.add_argument(
         "--no-counts", action="store_true", help="leave out the structure and counts"
     )
