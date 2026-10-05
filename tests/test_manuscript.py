@@ -153,3 +153,7 @@ def test_a_notes_part_with_a_stray_end_tag_does_not_break_the_reading():
     parts = dict(PARTS)
     parts[ENDNOTES] = parts[ENDNOTES].replace("<w:endnotes>", "<w:endnotes></w:endnote>")
     assert [note[0].place for note in Manuscript(parts).endnotes] == ["endnote:1", "endnote:2"]
+
+
+def test_note_order_lists_both_kinds_of_note_as_their_markers_come_in_the_body():
+    assert Manuscript(PARTS).note_order() == ["endnote:1", "footnote:1", "endnote:2"]

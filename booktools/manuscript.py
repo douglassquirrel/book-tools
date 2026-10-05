@@ -76,6 +76,16 @@ class Manuscript:
             )
         return notes
 
+    def note_order(self):
+        """The place of every note, endnotes and footnotes together, in the order of
+        their markers in the body."""
+        markers = [
+            (offset, f"{kind}:{number}")
+            for kind in ("endnote", "footnote")
+            for number, (offset, _) in enumerate(self._markers[kind], 1)
+        ]
+        return [place for _, place in sorted(markers)]
+
     def note_label(self, kind, number):
         """How the book shows the note counted `number`: under its heading, with the
         number it prints as, then the count, as "Chapter 3, note 7 (endnote:42)"."""
