@@ -5,7 +5,8 @@ import re
 import unicodedata
 
 KEYS = ("id", "where", "find", "replace", "occurrence", "why")
-WHERE = re.compile(r"(body|all|(endnote|footnote):[1-9][0-9]*)$")
+WHERE = re.compile(r"(body|all|(endnote|footnote):[1-9][0-9]*|N-[0-9]{4,})$")
+ID = re.compile(r"N-[0-9]+$")
 
 
 class EditsFileError(Exception):
@@ -20,7 +21,8 @@ class Edit:
     def __init__(self, index, id, where, find, replace, occurrence, why):
         self.index = index  # position in the file, from 1
         self.id = id
-        self.where = where  # ("body",), ("all",), ("endnote", N) or ("footnote", N)
+        # ("body",), ("all",), ("endnote", N), ("footnote", N) or ("id", "N-0042")
+        self.where = where
         self.find = find
         self.replace = replace
         self.occurrence = occurrence  # None when not given
@@ -97,7 +99,10 @@ def _faults(item):
             faults.append(f'"{key}" holds a tab, which cannot be proposed as a tracked change here')
     where = item.get("where", "body")
     if not isinstance(where, str) or not WHERE.match(where):
-        faults.append('"where" must be body, all, endnote:N or footnote:N (N from 1)')
+        faults.append(
+            '"where" must be body, all, endnote:N or footnote:N (N from 1),'
+            " or a note's permanent ID such as N-0042"
+        )
     occurrence = item.get("occurrence", 1)
     if type(occurrence) is not int or occurrence < 1:
         faults.append('"occurrence" must be a whole number, 1 or more')
@@ -105,6 +110,9 @@ def _faults(item):
 
 
 def _where(value):
-    """("body",), ("all",), ("endnote", N) or ("footnote", N) for the text of "where"."""
+    """("body",), ("all",), ("endnote", N), ("footnote", N) or ("id", "N-0042") for the
+    text of "where"."""
+    if ID.match(value):
+        return ("id", value)
     kind, _, number = value.partition(":")
     return (kind, int(number)) if number else (kind,)

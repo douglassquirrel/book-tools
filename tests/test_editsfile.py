@@ -82,8 +82,11 @@ def test_a_replace_equal_to_its_find_is_an_error():
 
 
 def test_where_and_occurrence_must_be_of_the_stated_forms():
-    bad_where = 'edit 1: "where" must be body, all, endnote:N or footnote:N (N from 1)'
-    for where in ("header", "endnote:", "endnote:0", "endnote:x", "body:2", 7):
+    bad_where = (
+        'edit 1: "where" must be body, all, endnote:N or footnote:N (N from 1),'
+        " or a note's permanent ID such as N-0042"
+    )
+    for where in ("header", "endnote:", "endnote:0", "endnote:x", "body:2", 7, "N-42", "n-0042", "N-0042 "):
         assert problems(one(find="a", replace="b", where=where)) == [bad_where]
     bad_occurrence = 'edit 1: "occurrence" must be a whole number, 1 or more'
     for occurrence in (0, -1, "2", 1.5, True):
@@ -119,3 +122,10 @@ def test_unknown_keys_and_wrong_kinds_are_named_and_every_problem_is_listed():
         'edit 2: "why" must be text',
         'edit 4: "replace" is the same as "find", so the edit would change nothing',
     ]
+
+
+def test_where_may_name_a_note_by_its_permanent_id():
+    (edit,) = parse_edits('[{"find": "a", "replace": "b", "where": "N-0042"}]')
+    assert edit.where == ("id", "N-0042")
+    (edit,) = parse_edits('[{"find": "a", "replace": "b", "where": "N-12345"}]')
+    assert edit.where == ("id", "N-12345")

@@ -13,9 +13,11 @@ from booktools.clock import instant, revision_dates
 from booktools.docx import Docx, DocxError
 from booktools.editsfile import EditsFileError, parse_edits
 from booktools.manuscript import Manuscript
+from booktools.notes import read_notes
 from booktools.plan import PlanError, plan
 from booktools.propose import apply, edit_results, highest_id, verify
-from booktools.report import edit_line
+from booktools.registry import RegistryError, load_registry, where_now
+from booktools.report import ARROW, edit_line
 
 
 def main(argv=None, now=None):
@@ -51,6 +53,8 @@ def _run(args, now):
         raise Refusal(str(error)) from None
     if os.path.realpath(args.out) == os.path.realpath(args.manuscript):
         raise Refusal(f"{args.out} is the manuscript itself; a copy must have another name")
+    if args.registry and os.path.realpath(args.out) == os.path.realpath(args.registry):
+        raise Refusal(f"{args.out} is the registry; a copy must have another name")
     folder = os.path.dirname(args.out) or "."
     if not os.path.isdir(folder):
         raise Refusal(f"the folder {folder} does not exist")
@@ -61,8 +65,9 @@ def _run(args, now):
     if not edits:
         print("no edits, nothing written")
         return 0
+    ids = _ids(edits, manuscript, args.registry)
     try:
-        located = plan(edits, manuscript, highest_id(parts))
+        located = plan(edits, manuscript, highest_id(parts), ids)
     except PlanError as error:
         for found in error.located:
             print(edit_line(found, found.text, _place(manuscript, found), "found"))
@@ -109,6 +114,28 @@ def _run(args, now):
     print(f"wrote {args.out}")
     return 0
 
+def _ids(edits, manuscript, registry):
+    """Where the notes that edits name by permanent ID now are, from the registry
+    (`registry.where_now`); None when no edit names one. The registry is only read."""
+    by_id = [edit for edit in edits if edit.where[0] == "id"]
+    if not by_id:
+        return None
+    if not registry:
+        first = by_id[0]
+        raise Refusal(
+            f"{first.name} names a note by its permanent ID ({first.where[1]});"
+            " give the registry with --registry FILE"
+        )
+    try:
+        with open(registry, encoding="utf-8") as file:
+            entries = load_registry(file.read()).entries
+    except FileNotFoundError:
+        raise Refusal(f"{registry}: no such file") from None
+    except RegistryError as error:
+        raise Refusal(f"{registry} cannot be used: {error}") from None
+    return where_now([edit.where[1] for edit in by_id], read_notes(manuscript), entries)
+
+
 def _install(copy, out):
     """Put the finished copy at `out` in one step, so that `out` is never seen half
     written: the bytes go to a name beside it, which then takes its place."""
@@ -131,7 +158,10 @@ def _place(manuscript, found):
     if target.place == "body":
         return f"body, paragraph {target.number}"
     kind, _, number = target.place.partition(":")
-    return manuscript.note_label(kind, int(number))
+    label = manuscript.note_label(kind, int(number))
+    if found.edit.where[0] == "id":
+        return f"{found.edit.where[1]} {ARROW} {label}"
+    return label
 
 
 def _parser():
@@ -143,6 +173,12 @@ def _parser():
     parser.add_argument("edits", metavar="EDITS.json", help="the edits file: a JSON list")
     parser.add_argument("--in", dest="manuscript", required=True, metavar="MANUSCRIPT.docx")
     parser.add_argument("--out", required=True, metavar="NEW.docx", help="the copy to write")
+    parser.add_argument(
+        "--registry",
+        metavar="FILE",
+        help="note-map's registry, needed when an edit names a note by its permanent ID"
+        " (\"where\": \"N-0042\"); it is only read",
+    )
     parser.add_argument("--author", default="Claude", metavar="NAME")
     parser.add_argument(
         "--date", metavar="ISO", help="the date and time to put on the changes (default: now)"

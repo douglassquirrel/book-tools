@@ -1,7 +1,7 @@
 import pytest
 
 from booktools.notes import Note
-from booktools.registry import Entry, match
+from booktools.registry import Entry, match, where_now
 
 pytestmark = pytest.mark.tier1
 
@@ -316,3 +316,27 @@ def test_two_empty_texts_are_alike_and_an_empty_one_is_unlike_anything():
     assert likeness("", "") == 1.0
     assert likeness("", "word") == 0.0
     assert likeness("The same words.", "the same  words") == 1.0
+
+
+def test_where_now_says_where_each_id_is_in_this_save_or_why_it_cannot_be_said():
+    known = entries(TEXTS)
+    known.append(Entry("N-0005", "endnote", "Long gone.", "A sentence since cut.", retired_in="abc"))
+    save = notes(
+        [
+            ("A note added in front.", "A new sentence altogether."),
+            TEXTS[0],
+            # The second entry's note, reworded and moved in the same save: not to be guessed.
+            ("Ibid., p. 4.", "The log for March was never found."),
+            TEXTS[3],
+        ]
+    )
+    wanted = ["N-0001", "N-0002", "N-0003", "N-0004", "N-0005", "N-0077"]
+    assert where_now(wanted, save, known) == {
+        "N-0001": ("endnote", 2),
+        "N-0002": "N-0002 cannot be placed in this save without guessing (it may be"
+        " endnote:3); run note-map on this save to settle it",
+        "N-0003": "the note N-0003 is not in this save",
+        "N-0004": ("endnote", 4),
+        "N-0005": "N-0005 is retired: its note was already gone from an earlier save",
+        "N-0077": "N-0077 is not in the registry",
+    }

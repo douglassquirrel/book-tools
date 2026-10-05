@@ -6,7 +6,7 @@ import pytest
 
 from booktools.propose_edits import main
 from tests.docxkit import pack_docx
-from tests.samples import SAMPLE_EDITS, sample_parts
+from tests.samples import SAMPLE_EDITS, edited_parts, moved_and_rewritten, sample_parts
 
 pytestmark = pytest.mark.tier2
 
@@ -413,3 +413,123 @@ def test_with_force_an_interrupted_run_leaves_the_earlier_file_as_it_was(book, m
     assert book.run("--force") == 130
     assert book.out.read_text() == "the earlier copy"
     assert [path.name for path in book.out.parent.iterdir()] == ["new.docx"]
+
+
+BY_ID = [{"id": "E3", "where": "N-0001", "find": "Trinity House", "replace": "Trinity House, London"}]
+
+
+def registered(book, *saves):
+    """A registry in a folder of its own that has seen `saves` in turn (the sample by default)."""
+    from booktools.note_map import main as note_map
+
+    records = book.folder.parent / "records"
+    records.mkdir()
+    book.registry = records / "notes.json"
+    for number, parts in enumerate(saves or [sample_parts()]):
+        save = records / f"save{number}.docx"
+        pack_docx(save, parts)
+        assert note_map([str(save), "--registry", str(book.registry)]) == 0
+        save.unlink()
+    return book.registry
+
+
+def test_an_edit_naming_a_note_by_its_permanent_id_lands_in_that_note_whatever_its_number(
+    tmp_path, capsys
+):
+    book = Book(tmp_path, BY_ID)
+    registry = registered(book)
+    before = registry.read_bytes()
+    capsys.readouterr()
+    assert book.run("--registry", str(registry), "--dry-run") == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "E3 | N-0001 → Chapter 1, note 1 (endnote:1) | …Recorded by Trinity House[→ , London]"
+        " in the station log. | | found"
+    )
+    # The same edits file against a later save, in which a note was added in front.
+    pack_docx(book.manuscript, edited_parts())
+    assert book.run("--registry", str(registry)) == 0
+    assert capsys.readouterr().out.splitlines()[0] == (
+        "E3 | N-0001 → Chapter 1, note 2 (endnote:2) | …Recorded by Trinity House[→ , London]"
+        " in the station log. | | PASS"
+    )
+    with zipfile.ZipFile(book.out) as copy:
+        notes = copy.read("word/endnotes.xml").decode("utf-8")
+    assert notes.count("<w:ins ") == 1
+    assert notes.index("A note added") < notes.index("<w:ins ") < notes.index("Ibid.")
+    assert registry.read_bytes() == before
+    assert [path.name for path in registry.parent.iterdir()] == ["notes.json"]
+
+
+def test_an_edit_by_id_needs_the_registry_and_a_registry_that_can_be_read(tmp_path, capsys):
+    book = Book(tmp_path, BY_ID)
+    assert refused(book, capsys) == [
+        "propose-edits: edit 1 (E3) names a note by its permanent ID (N-0001);"
+        " give the registry with --registry FILE"
+    ]
+    missing = tmp_path / "nowhere.json"
+    assert refused(book, capsys, "--registry", str(missing)) == [
+        f"propose-edits: {missing}: no such file"
+    ]
+    missing.write_text("[]")
+    assert refused(book, capsys, "--registry", str(missing)) == [
+        f"propose-edits: {missing} cannot be used: it is not a note registry written by note-map"
+    ]
+    assert not book.out.exists()
+
+
+def test_the_registry_is_never_the_copy_to_write_and_is_not_read_when_no_edit_needs_it(
+    book, capsys, tmp_path
+):
+    registry = tmp_path / "notes.json"
+    registry.write_text("not a registry at all")
+    assert book.run("--registry", str(registry), "--dry-run") == 0  # no edit names an ID
+    capsys.readouterr()
+    assert book.run("--registry", str(registry), "--out", str(registry), "--force") == 2
+    assert capsys.readouterr().err.splitlines() == [
+        f"propose-edits: {registry} is the registry; a copy must have another name"
+    ]
+    assert registry.read_text() == "not a registry at all"
+
+
+def test_an_id_that_cannot_be_placed_is_named_with_the_reason_and_nothing_is_written(
+    tmp_path, capsys
+):
+    edits = [
+        {"id": "ok", "find": "March", "replace": "April"},
+        {"id": "unknown", "where": "N-0042", "find": "Ibid", "replace": "Idem"},
+        {"id": "retired", "where": "N-0001", "find": "note", "replace": "remark"},
+    ]
+    book = Book(tmp_path, edits)
+    # The registry saw the edited save first, whose first note the sample does not have.
+    registry = registered(book, edited_parts(), sample_parts())
+    before = registry.read_bytes()
+    capsys.readouterr()
+    assert book.run("--registry", str(registry)) == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "ok | body, paragraph 9 | The log for [March → April] is missing. | | found"
+    ]
+    assert captured.err.splitlines() == [
+        "propose-edits: 2 of 3 edits cannot be made; nothing written:",
+        "  edit 2 (unknown): N-0042 is not in the registry",
+        "  edit 3 (retired): N-0001 is retired: its note was already gone from an earlier save",
+    ]
+    assert not book.out.exists() and registry.read_bytes() == before
+
+
+def test_an_id_whose_note_is_unclear_in_this_save_is_not_guessed(tmp_path, capsys):
+    book = Book(tmp_path, BY_ID, parts=moved_and_rewritten())
+    registry = registered(book)
+    capsys.readouterr()
+    assert book.run("--registry", str(registry)) == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "propose-edits: 1 of 1 edit cannot be made; nothing written:",
+        "  edit 1 (E3): N-0001 cannot be placed in this save without guessing (it may be"
+        " endnote:1); run note-map on this save to settle it",
+    ]
+    assert not book.out.exists()
+
+
+def test_help_names_the_registry_flag(capsys):
+    assert main(["--help"]) == 0
+    assert "--registry" in capsys.readouterr().out

@@ -5,7 +5,7 @@ import pytest
 
 from booktools.note_map import main
 from tests.docxkit import pack_docx
-from tests.samples import edited_parts, sample_parts
+from tests.samples import edited_parts, moved_and_rewritten, sample_parts
 from tests.stubs import only, pandoc_stub
 
 pytestmark = pytest.mark.tier2
@@ -109,19 +109,6 @@ def test_the_manuscript_is_only_read_and_nothing_else_appears_beside_it_or_the_r
     assert book.manuscript.read_bytes() == before
     assert [path.name for path in book.folder.iterdir()] == ["Book.docx"]
     assert [path.name for path in book.records.iterdir()] == ["notes.json"]  # no .prev, no partial
-
-
-def moved_and_rewritten():
-    """A save in which the first endnote was reworded and its sentence recast."""
-    parts = sample_parts()
-    parts["word/document.xml"] = parts["word/document.xml"].replace(
-        "The lamp was lit at dusk, and the kee", "At dusk the lamp was always lit; the kee"
-    )
-    parts["word/endnotes.xml"] = parts["word/endnotes.xml"].replace(
-        "Recorded by Trinity House in the station log.",
-        "The station log, as recorded by Trinity House.",
-    )
-    return parts
 
 
 def test_an_unclear_note_is_listed_with_its_candidates_and_nothing_is_written(book, capsys):

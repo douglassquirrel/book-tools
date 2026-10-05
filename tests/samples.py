@@ -169,6 +169,19 @@ def edited_parts():
     return parts
 
 
+def moved_and_rewritten():
+    """A save in which the first endnote was reworded and its sentence recast."""
+    parts = sample_parts()
+    parts["word/document.xml"] = parts["word/document.xml"].replace(
+        "The lamp was lit at dusk, and the kee", "At dusk the lamp was always lit; the kee"
+    )
+    parts["word/endnotes.xml"] = parts["word/endnotes.xml"].replace(
+        "Recorded by Trinity House in the station log.",
+        "The station log, as recorded by Trinity House.",
+    )
+    return parts
+
+
 SAMPLE_EDITS = [
     {
         "id": "E1",

@@ -232,3 +232,35 @@ def update(registry, matching, save):
                 )
             )
     return Registry(live + retired, next), ids
+
+
+def where_now(wanted, notes, entries):
+    """Where the note of each permanent ID in `wanted` stands in a save, without
+    guessing: {ID: (kind, number)}, or {ID: why it cannot be said}.
+
+    `notes` are the save's notes and `entries` every entry of the registry, retired
+    ones included. The matching is note-map's, and nothing is recorded.
+    """
+    matching = match(notes, [entry for entry in entries if entry.retired_in is None])
+    placed = {entry.id: (note.kind, note.number) for note, entry in matching.carried}
+    maybe = {}
+    for note, candidates in matching.unclear:
+        for entry in candidates:
+            maybe.setdefault(entry.id, []).append(note.place)
+    known = {entry.id: entry for entry in entries}
+    now = {}
+    for id in wanted:
+        if id in placed:
+            now[id] = placed[id]
+        elif id not in known:
+            now[id] = f"{id} is not in the registry"
+        elif known[id].retired_in is not None:
+            now[id] = f"{id} is retired: its note was already gone from an earlier save"
+        elif id in maybe:
+            now[id] = (
+                f"{id} cannot be placed in this save without guessing (it may be"
+                f" {' or '.join(maybe[id])}); run note-map on this save to settle it"
+            )
+        else:
+            now[id] = f"the note {id} is not in this save"
+    return now

@@ -31,10 +31,12 @@ class Located:
         self.change = change
 
 
-def plan(edits, manuscript, highest_id):
+def plan(edits, manuscript, highest_id, ids=None):
     """Return a Located for each edit, in document order, or raise PlanError.
 
     Revision ids are given out in document order, starting above `highest_id`.
+    `ids` says where each note named by its permanent ID now is: {ID: (kind, number)},
+    or {ID: why it cannot be placed} (`registry.where_now` gives it).
     """
     paragraphs = {}
 
@@ -48,7 +50,7 @@ def plan(edits, manuscript, highest_id):
     located = []
     problems = []
     for edit in edits:
-        space, where = _space(edit, manuscript)
+        space, where = _space(edit, manuscript, ids or {})
         if space is None:
             problems.append(f"{edit.name}: {where}")
             continue
@@ -122,9 +124,17 @@ def _overlaps(located):
     return problems
 
 
-def _space(edit, manuscript):
+def _space(edit, manuscript, ids):
     """The paragraphs to search for `edit` and what to call them; (None, why) if none."""
     kind = edit.where[0]
+    if kind == "id":
+        id = edit.where[1]
+        now = ids.get(id, f"{id} cannot be placed: no registry was given")
+        if isinstance(now, str):
+            return None, now
+        kind, number = now
+        notes = manuscript.endnotes if kind == "endnote" else manuscript.footnotes
+        return notes[number - 1], f"{id} ({kind}:{number})"
     if kind == "body":
         return manuscript.body, "the body"
     notes = {"endnote": manuscript.endnotes, "footnote": manuscript.footnotes}

@@ -219,3 +219,31 @@ def test_a_pure_insertion_is_attached_to_a_character_of_the_text_the_edit_named(
     # so that it stays outside the hyperlink that ends just before.
     assert change_of(" now", ", now") == (12, 12, ",", False)
     assert change_of("see", "do see") == (0, 0, "do ", False)
+
+
+def test_where_naming_a_permanent_id_searches_the_note_that_id_now_is():
+    parts = body(p("Text"))
+    parts[BODY] = parts[BODY].replace(
+        "</w:body>",
+        '<w:p><w:r><w:endnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body>',
+    )
+    parts[ENDNOTES] = (
+        '<w:endnotes><w:endnote w:id="1">' + p("first note") + "</w:endnote>"
+        '<w:endnote w:id="2">' + p("second note") + "</w:endnote></w:endnotes>"
+    )
+    m = Manuscript(parts)
+    ids = {"N-0007": ("endnote", 2), "N-0008": "N-0008 is not in the registry"}
+    (found,) = plan([edit(1, "note", "NOTE", where=("id", "N-0007"))], m, 0, ids)
+    assert (found.target.place, found.target.part, found.start) == ("endnote:2", ENDNOTES, 7)
+    with pytest.raises(PlanError) as raised:
+        plan(
+            [
+                edit(1, "first", "1st", where=("id", "N-0007")),
+                edit(2, "note", "x", "B", where=("id", "N-0008")),
+            ],
+            m, 0, ids,
+        )
+    assert raised.value.problems == [
+        'edit 1: "find" text not found in N-0007 (endnote:2)',
+        "edit 2 (B): N-0008 is not in the registry",
+    ]
