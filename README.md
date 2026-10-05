@@ -579,7 +579,7 @@ interrupted. No command writes anything beside its input, and none leaves a `__p
 | Code | Meaning |
 |---|---|
 | 0 | Complete success, including nothing to do. `compare-saves` exits 0 whether or not the saves differ. |
-| 1 | The run happened and found a problem: an edit could not be placed, a check failed, a ticket failed, a note is unclear, a paragraph is not at the expected spacing, a source could not be converted, a save could not be read. |
+| 1 | The run happened and found a problem: an edit could not be placed, a check failed, a ticket failed, a note is unclear, a paragraph is not at the expected spacing, a source could not be converted, a save could not be read, the system refused the command a file. |
 | 2 | The command refused to start: a bad flag, a missing program, a missing or faulty input, an output that exists. Nothing was done. |
 | 130 | Interrupted (Ctrl-C). Nothing half-written is left behind, unless the system forbids removing it, which the command then says. |
 
@@ -593,6 +593,7 @@ What to do about the refusals and failures you are most likely to meet:
 | `N-0042 is retired …`, `… is not in the registry`, `the note N-0042 is not in this save` | The note the edit was written for is gone, or the ID is mistyped. Check the map. |
 | `N-0042 cannot be placed in this save without guessing …` | Run `note-map` on this save and settle the unclear note with `--assign`; then run the edits again. |
 | `no reading text: …; nothing written. To bring the registry up to date without it, run again without --extract` | pandoc failed, or counted the notes differently from the manuscript (a marker with no note, a note in a text box). Nothing was written, the registry included. Run without `--extract` to update the registry alone. |
+| `stopped by the system: Operation not permitted: FILE` (or `Permission denied`, `No space left on device`) | The system would not let the command read or write that file. The run stopped there (exit 1); nothing is left half written. Put right the permission or the disk, and run again. |
 | `could not remove … ; remove it by hand` | The system refused to let the command delete something it made. Delete the named file or folder yourself (or grant the permission and run again). |
 | `"find" text not found …` | The text is not in the place searched. Check `where`, and that the text is copied exactly, curly quotes included. |
 | `"find" text occurs N times …; add "occurrence"` | Add `"occurrence": 2` (or whichever). |
@@ -694,7 +695,7 @@ small stand-in program on a `PATH` of its own, which records what it was given a
 told to fail. Every document in the tests is invented and built by the tests themselves; no
 real manuscript, source or ticket is in this repository.
 
-Coverage of `booktools/` is 99% (statements and branches; 394 tests). The four statements
+Coverage of `booktools/` is 99% (statements and branches; 398 tests). The four statements
 no test in the suite's own process runs are the lines of `sources-to-text` that only its
 worker processes run (writing their tally, and the module's entry point), which the
 `--workers` tests exercise in child processes where coverage is not measured.
@@ -801,6 +802,11 @@ know. The first version of each command was built on 3 October 2026.
   a part-written file it made, the command now says `could not remove …; remove it by hand`
   on standard error instead of stopping with a Python traceback. `sources-to-text` then goes
   on, ends its last line with `; N could not be removed`, and exits 1.
+- 5 October 2026: when the system refuses a command a file it must read or write (no
+  permission, a full disk), every command now stops with one line, `stopped by the system:
+  REASON: FILE`, and exit code 1, where it used to stop with a Python traceback.
+- 5 October 2026: when `note-map --extract` cannot make the reading text, its message now
+  ends by saying how to update the registry alone (run again without `--extract`).
 - 5 October 2026: nothing changed in `sources-to-text --skip`, but note what it is for: name
   your own index file of the sources there and it is neither copied nor counted.
 - 5 October 2026: advice added on the size of a book folder kept in git (keep figures out

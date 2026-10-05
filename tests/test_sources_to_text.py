@@ -707,3 +707,23 @@ def test_redo_exits_1_when_something_it_made_cannot_be_removed(sources, capsys, 
         "sources-to-text: could not remove the part-written file book.epub.txt.new.partial:"
         " Operation not permitted; remove it by hand"
     ]
+
+
+def test_a_text_the_system_will_not_let_be_written_stops_the_run_with_one_line_and_no_lock(
+    sources, capsys, monkeypatch
+):
+    import booktools.sources_to_text as command
+
+    sources.add("one.pdf", pdf([LONG]))
+
+    def refuse(self, name, data):
+        raise PermissionError(1, "Operation not permitted", self.target(name) + ".partial")
+
+    monkeypatch.setattr(command.Job, "write", refuse)
+    assert sources.run("--no-rotate") == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "sources-to-text: stopped by the system: Operation not permitted: "
+        + str(sources.out / "one.pdf.txt.partial")
+    ]
+    assert sources.made() == []
+    assert list(sources.scratch.iterdir()) == []

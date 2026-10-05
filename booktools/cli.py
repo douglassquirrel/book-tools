@@ -14,7 +14,9 @@ class Refusal(Exception):
 
 def run(name, parser, body, argv, interrupted="interrupted"):
     """Parse `argv` and run `body(args)`, returning the exit code: what `body`
-    returns, 2 for a usage error or a Refusal, 130 when interrupted."""
+    returns, 2 for a usage error or a Refusal, 130 when interrupted, and 1 when the
+    system refuses the command a file (no permission, no room): said in one line,
+    never a traceback."""
     try:
         args = parser.parse_args(argv)
     except SystemExit as stop:
@@ -29,6 +31,11 @@ def run(name, parser, body, argv, interrupted="interrupted"):
         for line in refusal.lines[1:]:
             print(f"  {line}", file=sys.stderr)
         return 2
+    except OSError as error:
+        said = error.strerror or str(error)
+        where = f": {error.filename}" if error.filename else ""
+        print(f"{name}: stopped by the system: {said}{where}", file=sys.stderr)
+        return 1
 
 
 def remove(command, path, what, shown=None, folder=False):

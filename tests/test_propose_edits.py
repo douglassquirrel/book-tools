@@ -576,3 +576,20 @@ def test_a_part_written_copy_that_cannot_be_removed_is_reported_not_a_traceback(
         "propose-edits: interrupted; nothing written",
     ]
     assert not book.out.exists()
+
+
+def test_a_copy_the_system_will_not_let_be_written_is_one_line_and_exit_1(
+    book, capsys, monkeypatch
+):
+    import os
+
+    def refuse(source, target):
+        raise PermissionError(1, "Operation not permitted", str(target))
+
+    monkeypatch.setattr(os, "replace", refuse)
+    assert book.run() == 1
+    assert capsys.readouterr().err.splitlines() == [
+        f"propose-edits: stopped by the system: Operation not permitted: {book.out}"
+    ]
+    assert [path.name for path in book.out.parent.iterdir()] == []  # no part-written file
+    assert list(book.scratch.iterdir()) == []
