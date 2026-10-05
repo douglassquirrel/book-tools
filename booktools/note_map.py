@@ -169,7 +169,7 @@ def _write(path, text):
         os.replace(partial, path)
     finally:
         if os.path.exists(partial):
-            os.remove(partial)
+            cli.remove("note-map", partial, "the part-written file")
 
 
 def _parser():

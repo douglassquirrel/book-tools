@@ -1,5 +1,6 @@
 """What every command does the same way: exit codes, refusals and interruption."""
 
+import os
 import sys
 
 
@@ -28,3 +29,19 @@ def run(name, parser, body, argv, interrupted="interrupted"):
         for line in refusal.lines[1:]:
             print(f"  {line}", file=sys.stderr)
         return 2
+
+
+def remove(command, path, what, shown=None, folder=False):
+    """Remove a file (or an empty folder) that the command itself made. Where the
+    system will not allow it, say so in one line and return False: that is something
+    for the user to clear away by hand, never a reason to stop with a traceback."""
+    try:
+        (os.rmdir if folder else os.remove)(path)
+    except OSError as error:
+        reason = error.strerror or str(error)
+        print(
+            f"{command}: could not remove {what} {shown or path}: {reason}; remove it by hand",
+            file=sys.stderr,
+        )
+        return False
+    return True

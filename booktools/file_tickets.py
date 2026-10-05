@@ -189,7 +189,7 @@ def _save(path, records):
         os.replace(partial, path)
     finally:
         if os.path.exists(partial):
-            os.remove(partial)
+            cli.remove("file-tickets", partial, "the part-written file")
 
 
 def _file(ticket, project, timeout):

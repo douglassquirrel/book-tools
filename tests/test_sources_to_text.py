@@ -569,3 +569,141 @@ def test_pillow_is_used_when_it_can_be_imported_and_done_without_when_it_cannot(
     assert command._pillow() is fake.Image
     monkeypatch.setitem(sys.modules, "PIL", None)  # as if it were not installed
     assert command._pillow() is None
+
+
+def test_a_lock_that_cannot_be_removed_is_reported_and_the_run_goes_on_and_exits_1(
+    sources, capsys, monkeypatch
+):
+    from tests.stubs import forbid_removal
+
+    sources.add("one.pdf", pdf([LONG]))
+    sources.add("two.pdf", pdf([LONG + " Two."]))
+    forbid_removal(monkeypatch, ".lock-")
+    assert sources.run("--no-rotate") == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "one.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "two.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "2 converted, 0 skipped, 0 failed; 2 could not be removed",
+    ]
+    assert captured.err.splitlines() == [
+        "sources-to-text: could not remove the lock .lock-one.pdf: Operation not permitted;"
+        " remove it by hand",
+        "sources-to-text: could not remove the lock .lock-two.pdf: Operation not permitted;"
+        " remove it by hand",
+    ]
+    assert sources.made() == [
+        ".convert-log.txt", ".lock-one.pdf", ".lock-two.pdf", "one.pdf.txt", "two.pdf.txt",
+    ]
+    assert sources.text("two.pdf.txt").endswith(LONG + " Two.")
+
+
+def test_a_page_cache_that_cannot_be_removed_is_reported_and_the_file_counts_as_converted(
+    sources, capsys, monkeypatch
+):
+    from tests.stubs import forbid_removal
+
+    sources.add("one.pdf", pdf([LONG]))
+    sources.out.mkdir()
+    cache = sources.out / ".one.pdf.pages.json"  # as a run that ran out of time leaves it
+    cache.write_text(json.dumps({"pages": [LONG], "done": [None], "ocr": [False], "rot": [0]}))
+    forbid_removal(monkeypatch, ".pages.json")
+    assert sources.run("--no-rotate") == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "one.pdf: 1 pages, 0 read by OCR, 0 turned",
+        "1 converted, 0 skipped, 0 failed; 1 could not be removed",
+    ]
+    assert captured.err.splitlines() == [
+        "sources-to-text: could not remove the page cache .one.pdf.pages.json:"
+        " Operation not permitted; remove it by hand"
+    ]
+    assert sources.made() == [".convert-log.txt", ".one.pdf.pages.json", "one.pdf.txt"]
+    assert sources.run() == 0  # the text is there, so the leftover cache is not looked at again
+
+
+def test_clear_locks_that_cannot_remove_a_lock_says_so_and_leaves_its_file_alone(
+    sources, capsys, monkeypatch
+):
+    from tests.stubs import forbid_removal
+
+    sources.add("one.pdf", pdf([LONG]))
+    sources.out.mkdir()
+    (sources.out / ".lock-one.pdf").mkdir()
+    forbid_removal(monkeypatch, ".lock-")
+    assert sources.run("--clear-locks") == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "0 converted, 0 skipped, 0 failed; 1 left locked; 1 could not be removed"
+    ]
+    assert captured.err.splitlines()[0] == (
+        "sources-to-text: could not remove the lock .lock-one.pdf: Operation not permitted;"
+        " remove it by hand"
+    )
+    assert sources.made() == [".lock-one.pdf"]
+
+
+def test_part_written_files_that_cannot_be_removed_are_reported_not_a_traceback(
+    sources, capsys, monkeypatch
+):
+    import booktools.sources_to_text as command
+    from tests.stubs import forbid_removal
+
+    sources.add("one.pdf", pdf([LONG]))
+    sources.add("book.epub", "an epub the stand-in pandoc will fail on")
+
+    def interrupt(self, name, data):
+        with open(self.target(name) + ".partial", "wb") as file:
+            file.write(b"half")
+        raise KeyboardInterrupt
+
+    def half_an_epub(self, command_line, timeout):
+        with open(command_line[-1], "w") as file:
+            file.write("half")
+        raise command.Failure("pandoc failed: could not read the file")
+
+    forbid_removal(monkeypatch, ".partial")
+    with monkeypatch.context() as patch:
+        patch.setattr(command.Job, "call", half_an_epub)
+        assert sources.run("--skip", "one.pdf") == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "book.epub: FAILED: pandoc failed: could not read the file",
+        "0 converted, 0 skipped, 1 failed; 1 could not be removed",
+    ]
+    assert captured.err.splitlines() == [
+        "sources-to-text: could not remove the part-written file book.epub.txt.partial:"
+        " Operation not permitted; remove it by hand"
+    ]
+    monkeypatch.setattr(command.Job, "write", interrupt)
+    assert sources.run("--skip", "book.epub", "--no-rotate") == 130
+    assert capsys.readouterr().err.splitlines() == [
+        "sources-to-text: could not remove the part-written file one.pdf.txt.partial:"
+        " Operation not permitted; remove it by hand",
+        "sources-to-text: interrupted; run again to go on from where it stopped",
+    ]
+
+
+def test_redo_exits_1_when_something_it_made_cannot_be_removed(sources, capsys, monkeypatch):
+    import booktools.sources_to_text as command
+    from tests.stubs import forbid_removal
+
+    sources.add("book.epub", "an epub")
+
+    def half_an_epub(self, command_line, timeout):
+        with open(command_line[-1], "w") as file:
+            file.write("half")
+        raise command.Failure("pandoc failed: could not read the file")
+
+    monkeypatch.setattr(command.Job, "call", half_an_epub)
+    forbid_removal(monkeypatch, ".partial")
+    assert sources.run("--redo", "book.epub") == 1
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "book.epub: FAILED: pandoc failed: could not read the file",
+        "0 redone, 1 failed",
+    ]
+    assert captured.err.splitlines() == [
+        "sources-to-text: could not remove the part-written file book.epub.txt.new.partial:"
+        " Operation not permitted; remove it by hand"
+    ]

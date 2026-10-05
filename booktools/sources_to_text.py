@@ -58,10 +58,13 @@ def _run(args, clock, image, given):
     _need_programs(args.redo or waiting)
     os.makedirs(out, exist_ok=True)
     worker = args.worker_report is not None  # one of several processes of a larger run
+    leftover = []  # what this run made, or was asked to clear, and could not remove
     if args.clear_locks and not worker:
         for lock in _locks(out):
-            os.rmdir(os.path.join(out, lock))
-            print(f"cleared the lock {lock}")
+            if _remove(os.path.join(out, lock), "the lock", folder=True):
+                print(f"cleared the lock {lock}")
+            else:
+                leftover.append(lock)
     stale = set() if worker else {lock[len(LOCK) :] for lock in _locks(out)}
     if args.no_rotate:
         image = None
@@ -78,7 +81,8 @@ def _run(args, clock, image, given):
             )
     if args.redo:
         with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
-            return _redo(Job(folder, out, scratch, args, image, clock, None, redo=True))
+            job = Job(folder, out, scratch, args, image, clock, None, redo=True)
+            return max(_redo(job), 1 if job.leftover else 0)
     deadline = clock() + args.seconds if args.seconds is not None else None
     with tempfile.TemporaryDirectory(dir=args.tmp) as scratch:
         job = Job(folder, out, scratch, args, image, clock, deadline)
@@ -103,6 +107,9 @@ def _run(args, clock, image, given):
         summary += f"; {len(unfinished)} not finished: run again to go on"
     if locked:
         summary += f"; {len(locked)} left locked"
+    leftover += tally["leftover"]
+    if leftover:
+        summary += f"; {len(leftover)} could not be removed"
     print(summary)
     for name in locked:
         print(
@@ -110,7 +117,13 @@ def _run(args, clock, image, given):
             " on it. If none is, run again with --clear-locks",
             file=sys.stderr,
         )
-    return 1 if tally["failed"] or locked else 0
+    return 1 if tally["failed"] or locked or leftover else 0
+
+
+def _remove(path, what, folder=False):
+    """Remove something in the output folder; False, with a line saying so, if the
+    system will not allow it."""
+    return cli.remove("sources-to-text", path, what, os.path.basename(path), folder)
 
 
 def _need_programs(names):
@@ -173,7 +186,7 @@ def _redo(job):
 def _work(job, waiting):
     """Convert each waiting file that no other run has claimed; return what became of
     each, by name."""
-    tally = {"converted": [], "skipped": [], "failed": []}
+    tally = {"converted": [], "skipped": [], "failed": [], "leftover": job.leftover}
     for name in waiting:
         if job.out_of_time():
             break
@@ -201,8 +214,8 @@ def _work(job, waiting):
             # Whatever happened, leave no lock and nothing half written behind.
             for partial in (job.target(name) + ".partial", job.cache(name) + ".partial"):
                 if os.path.exists(partial):
-                    os.remove(partial)
-            os.rmdir(lock)
+                    job.remove(partial, "the part-written file")
+            job.remove(lock, "the lock", folder=True)
     return tally
 
 
@@ -223,7 +236,7 @@ def _workers(count, given, scratch):
     ]
     for process in running:
         process.wait()
-    tally = {"converted": [], "skipped": [], "failed": []}
+    tally = {"converted": [], "skipped": [], "failed": [], "leftover": []}
     for report in reports:
         if os.path.exists(report):
             with open(report, encoding="utf-8") as file:
@@ -281,6 +294,13 @@ class Job:
         self.image = image  # Pillow's Image module, or None to read pages as they are
         self.clock, self.deadline = clock, deadline
         self.redo = redo  # write NAME.txt.new and start afresh, leaving NAME.txt alone
+        self.leftover = []  # what could not be removed, for the user to clear by hand
+
+    def remove(self, path, what, folder=False):
+        """Remove something this run made; if that is not allowed, say so and go on."""
+        name = os.path.basename(path)
+        if name not in self.leftover and not _remove(path, what, folder):
+            self.leftover.append(name)  # said once; not tried again in this run
 
     def out_of_time(self):
         return self.deadline is not None and self.clock() > self.deadline
@@ -315,7 +335,7 @@ class Job:
                 os.replace(partial, self.target(name))
             finally:
                 if os.path.exists(partial):
-                    os.remove(partial)
+                    self.remove(partial, "the part-written file")
             self.log(f"{name} epub")
             return "converted with pandoc"
         if kind == "pdf":
@@ -365,7 +385,7 @@ class Job:
             done[index] = page
         self.write(name, assemble(done, ocr, turned).encode("utf-8"))
         if os.path.exists(cache) and not self.redo:
-            os.remove(cache)
+            self.remove(cache, "the page cache")
         self.log(f"{name} pages={total} ocr={sum(ocr)} turned={sum(1 for t in turned if t)}")
         return f"{total} pages, {sum(ocr)} read by OCR, {sum(1 for t in turned if t)} turned"
 

@@ -426,3 +426,24 @@ def test_help_names_the_flags_of_the_reading_text(capsys):
     out = capsys.readouterr().out
     for flag in ("--extract", "--force", "--timeout"):
         assert flag in out
+
+
+def test_a_part_written_registry_that_cannot_be_removed_is_reported_not_a_traceback(
+    book, capsys, monkeypatch
+):
+    import os
+
+    from tests.stubs import forbid_removal
+
+    def interrupt(source, target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "replace", interrupt)
+    forbid_removal(monkeypatch, ".partial-")
+    assert book.run() == 130
+    assert capsys.readouterr().err.splitlines() == [
+        f"note-map: could not remove the part-written file {book.registry}.partial-{os.getpid()}:"
+        " Operation not permitted; remove it by hand",
+        "note-map: interrupted; nothing written",
+    ]
+    assert not book.registry.exists()

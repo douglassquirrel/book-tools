@@ -552,3 +552,27 @@ def test_the_dry_run_and_the_report_note_an_edit_that_would_leave_two_spaces(tmp
         "C | body, paragraph 1 | One sentence. [A second sentence. →] A third. | | PASS",
         note,
     ]
+
+
+def test_a_part_written_copy_that_cannot_be_removed_is_reported_not_a_traceback(
+    book, capsys, monkeypatch
+):
+    import os
+    import shutil
+
+    from tests.stubs import forbid_removal
+
+    def cut_short(source, target, **_):
+        with open(target, "wb") as file:
+            file.write(b"half a file")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(shutil, "copyfile", cut_short)
+    forbid_removal(monkeypatch, ".partial-")
+    assert book.run() == 130
+    assert capsys.readouterr().err.splitlines() == [
+        f"propose-edits: could not remove the part-written file {book.out}.partial-{os.getpid()}:"
+        " Operation not permitted; remove it by hand",
+        "propose-edits: interrupted; nothing written",
+    ]
+    assert not book.out.exists()

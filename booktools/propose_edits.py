@@ -147,7 +147,7 @@ def _install(copy, out):
         os.replace(partial, out)
     finally:
         if os.path.exists(partial):
-            os.remove(partial)
+            cli.remove("propose-edits", partial, "the part-written file")
 
 
 def _note(found):

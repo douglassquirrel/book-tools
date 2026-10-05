@@ -355,3 +355,17 @@ def backlog_project(folder):
 def only(*stubs):
     """A PATH holding these stand-ins and nothing else."""
     return os.pathsep.join(str(stub.folder) for stub in stubs)
+
+
+def forbid_removal(monkeypatch, *words):
+    """Make the system refuse, as a folder that forbids deletion does, to remove any
+    file or folder whose name holds one of `words`; everything else is removed as usual."""
+    for function in ("remove", "rmdir"):
+        real = getattr(os, function)
+
+        def refuse(path, *args, real=real, **more):
+            if any(word in os.path.basename(str(path)) for word in words):
+                raise PermissionError(1, "Operation not permitted", str(path))
+            return real(path, *args, **more)
+
+        monkeypatch.setattr(os, function, refuse)

@@ -396,3 +396,23 @@ def test_a_create_that_dies_without_a_word_is_reported_with_its_exit_code(tmp_pa
     assert capsys.readouterr().out.splitlines()[0] == (
         "-  FAILED  Ch. 3: the 2019 figure (backlog said: nothing, and exited 3)"
     )
+
+
+def test_a_part_written_results_file_that_cannot_be_removed_is_reported_not_a_traceback(
+    batch, capsys, monkeypatch
+):
+    import os
+
+    from tests.stubs import forbid_removal
+
+    def interrupt(source, target):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(os, "replace", interrupt)
+    forbid_removal(monkeypatch, ".partial-")
+    assert batch.run("--results", str(batch.results)) == 130
+    assert capsys.readouterr().err.splitlines() == [
+        "file-tickets: could not remove the part-written file"
+        f" {batch.results}.partial-{os.getpid()}: Operation not permitted; remove it by hand",
+        "file-tickets: interrupted; run again with the same --results file to finish the batch",
+    ]
